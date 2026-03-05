@@ -264,8 +264,7 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 	$output.='</div>';
   	foreach($timetabs as $label=>$interval){
   	
-	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC ', array(':sim' => $sim_id));
-//	  	$output.="____".'SELECT max(score) score, username uid from playerdata where sim = '.$sim_id.' '.$interval.' group by username order by score DESC '."___ ";
+	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC LIMIT 6', array(':sim' => $sim_id));
 		$data = $query->fetchAll();
 		$counter= 0;
 		$foundme=false;
@@ -283,9 +282,11 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 			}
 			if (($counter>5) && $foundme) break;
 		}
-		if (($counter>0) && (!$foundme)){
+		if (($counter>0) && (!$foundme) && ($loggedin_uid != 0)){
 			$uname = lookupUserNumber($loggedin_uid);
-			$loutput.= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>0</td></tr>";
+			$myscore = $con->query('SELECT max(score) from playerdata where sim = :sim AND username = :uid '.$interval, array(':sim' => $sim_id, ':uid' => $loggedin_uid))->fetchField();
+			$myscoreformatted = number_format($myscore ? $myscore : 0);
+			$loutput.= "<tr class=\"myscore\"><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".$myscoreformatted."</td></tr>";
 		}
 		if ($counter==0) $output .= "No one has played this simulator in this time period.";
 		else $output .= "<table><tr></th></tr>".$loutput."</table>";
@@ -349,8 +350,7 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 	$output.='</div>';
   	foreach($timetabs as $label=>$interval){
   	
-	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC ', array(':sim' => $sim_id));
-//	  	$output.="____".'SELECT max(score) score, username uid from playerdata where sim = '.$sim_id.' '.$interval.' group by username order by score DESC '."___ ";
+	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC LIMIT 6', array(':sim' => $sim_id));
 		$data = $query->fetchAll();
 		$counter= 0;
 		$foundme=false;
@@ -368,9 +368,11 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 			}
 			if (($counter>5) && $foundme) break;
 		}
-		if (($counter>0) && (!$foundme)){
+		if (($counter>0) && (!$foundme) && ($loggedin_uid != 0)){
 			$uname = lookupUserNumber($loggedin_uid);
-			$loutput.= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>0</td></tr>";
+			$myscore = $con->query('SELECT max(score) from playerdata where sim = :sim AND username = :uid '.$interval, array(':sim' => $sim_id, ':uid' => $loggedin_uid))->fetchField();
+			$myscoreformatted = number_format($myscore ? $myscore : 0);
+			$loutput.= "<tr class=\"myscore\"><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".$myscoreformatted."</td></tr>";
 		}
 		if ($counter==0) $output .= "No one has played this simulator in this time period.";
 		else $output .= "<table><tr></th></tr>".$loutput."</table>";
@@ -434,8 +436,7 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 	$output.='</div>';
   	foreach($timetabs as $label=>$interval){
   	
-	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC ', array(':sim' => $sim_id));
-//	  	$output.="____".'SELECT max(score) score, username uid from playerdata where sim = '.$sim_id.' '.$interval.' group by username order by score DESC '."___ ";
+	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC LIMIT 6', array(':sim' => $sim_id));
 		$data = $query->fetchAll();
 		$counter= 0;
 		$foundme=false;
@@ -453,9 +454,11 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 			}
 			if (($counter>5) && $foundme) break;
 		}
-		if (($counter>0) && (!$foundme)){
+		if (($counter>0) && (!$foundme) && ($loggedin_uid != 0)){
 			$uname = lookupUserNumber($loggedin_uid);
-			$loutput.= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>0</td></tr>";
+			$myscore = $con->query('SELECT max(score) from playerdata where sim = :sim AND username = :uid '.$interval, array(':sim' => $sim_id, ':uid' => $loggedin_uid))->fetchField();
+			$myscoreformatted = number_format($myscore ? $myscore : 0);
+			$loutput.= "<tr class=\"myscore\"><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".$myscoreformatted."</td></tr>";
 		}
 		if ($counter==0) $output .= "No one has played this simulator in this time period.";
 		else $output .= "<table><tr></th></tr>".$loutput."</table>";
@@ -473,10 +476,10 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 
   	$sim_id =$variables['output'];
   	$con = \Drupal\Core\Database\Database::getConnection('default');
-  	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
+	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
   			' FROM playerdata '.
   			' where sim = :simid '.
-  			' group by username order by score DESC ', array(':simid' => $globalsimid));
+			' group by username HAVING sum(SimDuration) > 0 order by score DESC LIMIT 6', array(':simid' => $globalsimid));
 	$data = $query->fetchAll();
 	$output="";
 	$counter= 1;
@@ -492,6 +495,12 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 		if (($counter>5) && $foundme) break;
 		$counter++;
 
+	}
+	if (($counter>1) && (!$foundme) && ($loggedin_uid != 0)){
+		$uname = lookupUserNumber($loggedin_uid);
+		$myscore = $con->query('SELECT sum(Challenge2)/(sum(SimDuration)/3600) score FROM playerdata where sim = :simid AND username = :uid HAVING sum(SimDuration) > 0', array(':simid' => $globalsimid, ':uid' => $loggedin_uid))->fetchField();
+		$scoreformatted = number_format($myscore ? $myscore : 0);
+		$output .= "<tr class=\"myscore\"><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".$scoreformatted."</td></tr>";
 	}
 	if ($output=="") $output = "No one has played this simulator yet.";
 	else $output = "<table><tr></th></tr>".$output."</table>";
@@ -506,10 +515,10 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 
   	$sim_id =$variables['output'];
   	$con = \Drupal\Core\Database\Database::getConnection('default');
-  	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
+	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
   			' FROM playerdata '.
   			' where sim = :simid '.
-  			' group by username order by score DESC ', array(':simid' => $globalsimid));
+			' group by username HAVING sum(SimDuration) > 0 order by score DESC LIMIT 6', array(':simid' => $globalsimid));
 	$data = $query->fetchAll();
 	$output="";
 	$counter= 1;
@@ -526,6 +535,12 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 		$counter++;
 
 	}
+	if (($counter>1) && (!$foundme) && ($loggedin_uid != 0)){
+		$uname = lookupUserNumber($loggedin_uid);
+		$myscore = $con->query('SELECT sum(Challenge2)/(sum(SimDuration)/3600) score FROM playerdata where sim = :simid AND username = :uid HAVING sum(SimDuration) > 0', array(':simid' => $globalsimid, ':uid' => $loggedin_uid))->fetchField();
+		$scoreformatted = number_format($myscore ? $myscore : 0);
+		$output .= "<tr class=\"myscore\"><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".$scoreformatted."</td></tr>";
+	}
 	if ($output=="") $output = "No one has played this simulator yet.";
 	else $output = "<table><tr></th></tr>".$output."</table>";
     $variables['output'] = $output;
@@ -539,10 +554,10 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 
   	$sim_id =$variables['output'];
   	$con = \Drupal\Core\Database\Database::getConnection('default');
-  	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
+	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
   			' FROM playerdata '.
   			' where sim = :simid '.
-  			' group by username order by score DESC ', array(':simid' => $globalsimid));
+			' group by username HAVING sum(SimDuration) > 0 order by score DESC LIMIT 6', array(':simid' => $globalsimid));
 	$data = $query->fetchAll();
 	$output="";
 	$counter= 1;
@@ -558,6 +573,12 @@ document.getElementById("btn_'.$firstlnospace.'").click();
 		if (($counter>5) && $foundme) break;
 		$counter++;
 
+	}
+	if (($counter>1) && (!$foundme) && ($loggedin_uid != 0)){
+		$uname = lookupUserNumber($loggedin_uid);
+		$myscore = $con->query('SELECT sum(Challenge2)/(sum(SimDuration)/3600) score FROM playerdata where sim = :simid AND username = :uid HAVING sum(SimDuration) > 0', array(':simid' => $globalsimid, ':uid' => $loggedin_uid))->fetchField();
+		$scoreformatted = number_format($myscore ? $myscore : 0);
+		$output .= "<tr class=\"myscore\"><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".$scoreformatted."</td></tr>";
 	}
 	if ($output=="") $output = "No one has played this simulator yet.";
 	else $output = "<table><tr></th></tr>".$output."</table>";
@@ -5721,11 +5742,8 @@ function checkChallengeCompletedAndSavePhoto($con,$uuid,$sim,$parts){
 //$debug=''.$extrasql." ".print_r($parts,true);
 	
 	$imagetosendback = "";
-  	$query = $con->query('SELECT `username` FROM `playerdata` where `username`= :uuid '.$extrasql."", $params);
-	$data = $query->fetchAll();
-	$found=false;
-	foreach($data as $item) {
-		$found=true;
+	$found = (bool) $con->query('SELECT 1 FROM `playerdata` where `username`= :uuid '.$extrasql.' LIMIT 1', $params)->fetchField();
+	if ($found) {
 		$imagetosendback = $parts[7];
 	}
 
@@ -5766,10 +5784,15 @@ function getUserSettings($con, $uid){
 }
 
 function checkChallengeCompleted($con,$uuid,$sim,$parts){
+	static $result_cache = array();
 	$params=array(':uuid' => $uuid);
 	$extrasql = "";
 	if (!is_array($parts)) $parts=array();
 	$parts= array_pad($parts,7,'');
+	$cache_key = md5($uuid.'|'.implode('|', $parts));
+	if (isset($result_cache[$cache_key])) {
+		return $result_cache[$cache_key];
+	}
   	
 	$parts[3] = str_replace("\n", "", $parts[3]);
 	$parts[3] = str_replace("\r", "", $parts[3]);
@@ -5834,21 +5857,21 @@ function checkChallengeCompleted($con,$uuid,$sim,$parts){
 //file_put_contents("/kunden/homepages/34/d764919300/htdocs/www_ridesims_com_v3_composer/jameswible123456789.log",date("r").$debug."\r\n", FILE_APPEND);
 
 	
-  	$query = $con->query('SELECT `username` FROM `playerdata` where `username`= :uuid '.$extrasql."", $params);
-	$data = $query->fetchAll();
-
-	$found=false;
-	foreach($data as $item) {
-		$found=true;
-	}
+	$found = (bool) $con->query('SELECT 1 FROM `playerdata` where `username`= :uuid '.$extrasql.' LIMIT 1', $params)->fetchField();
+	$result_cache[$cache_key] = $found;
 	return ($found);
 }
 
 function checkChallengeCompletedForYear($con,$uuid,$sim,$parts){
+	static $result_cache = array();
 	$params=array(':uuid' => $uuid);
 	$extrasql = "";
 	if (!is_array($parts)) $parts=array();
 	$parts= array_pad($parts,7,'');
+	$cache_key = md5($uuid.'|'.implode('|', $parts));
+	if (isset($result_cache[$cache_key])) {
+		return $result_cache[$cache_key];
+	}
   	
 	$parts[3] = str_replace("\n", "", $parts[3]);
 	$parts[3] = str_replace("\r", "", $parts[3]);
@@ -5911,22 +5934,19 @@ function checkChallengeCompletedForYear($con,$uuid,$sim,$parts){
 //$output.=''.$extrasql." ".print_r($parts,true);
 
 	
-  	$query = $con->query("SELECT `username` FROM `playerdata` where `username`= :uuid".$extrasql."", $params);
-	$data = $query->fetchAll();
-
-	$found=false;
-	foreach($data as $item) {
-		$found=true;
-	}
+	$found = (bool) $con->query('SELECT 1 FROM `playerdata` where `username`= :uuid '.$extrasql.' LIMIT 1', $params)->fetchField();
+	$result_cache[$cache_key] = $found;
 	return ($found);
 }
 
 function checkChallengeCompletedRideSimsPlus($con,$uuid,$sim,$parts,$medal){
+	static $result_cache = array();
 	$output = "";
 	$params=array(':uuid' => $uuid);
 	$extrasql = "";
 	if (!is_array($parts)) $parts=array();
 	$parts= array_pad($parts,7,'');
+	$cache_key = md5($uuid.'|'.implode('|', $parts));
   	
 	$parts[3] = str_replace("\n", "", $parts[3]);
 	$parts[3] = str_replace("\r", "", $parts[3]);
@@ -5989,15 +6009,13 @@ function checkChallengeCompletedRideSimsPlus($con,$uuid,$sim,$parts,$medal){
 	//$output.=''.$extrasql." ".print_r($parts,true);
 	//$RunThis = "SELECT `username` FROM `playerdata` where `username`= :uuid".$extrasql."". print_r($params,true)."<br><br>";
 	
-  	$query = $con->query("SELECT `username` FROM `playerdata` where `username`= :uuid".$extrasql."", $params);
-	$data = $query->fetchAll();
-
-	$found=false;
-	$MedalTrue="";
-	foreach($data as $item) {
-		$found=true;
-		$MedalTrue=$medal;	
+	if (isset($result_cache[$cache_key])) {
+		return $result_cache[$cache_key] ? $medal : "";
 	}
+
+	$found = (bool) $con->query('SELECT 1 FROM `playerdata` where `username`= :uuid '.$extrasql.' LIMIT 1', $params)->fetchField();
+	$result_cache[$cache_key] = $found;
+	$MedalTrue = $found ? $medal : "";
 	
 	return ($MedalTrue);
 
