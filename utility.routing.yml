@@ -1,0 +1,7 @@
+utility.api_user_detail:
+  path: '/api'
+  defaults:
+    _title: 'Username'
+    _controller: '\Drupal\utility\Controller\UserDetails::username'
+  requirements:
+    _permission: 'access content'    

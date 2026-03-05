@@ -1,0 +1,6358 @@
+<?php
+
+#version 1
+
+use Drupal\Core\Database\Database;
+use Drupal\views\ViewExecutable;
+use Drupal\Core\Block\BlockBase;
+/**
+ * Implements hook_preprocess_views_view_field().
+ */
+ 
+//Logged in User Ride Sim Stats 
+function utility_preprocess_views_view_field(&$variables) {
+
+  	//Global Values 
+	$view = $variables['view'];
+	$field = $variables['field'];
+	
+	//Top 3 User Scores 
+	if ($view->storage->id() == 'user_profile_stats' && $view->current_display == 'block_2' && $field->field == 'name') {
+  	global $uuid;
+  	
+  	
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT max(pd.score) score, pd.sim, pd.username '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by pd.sim, username order by score DESC LIMIT 3', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	$output="";
+	foreach($data as $item) {
+		$username = $item->username;
+		$score = $item->score;
+		$sim = $item->sim;
+		$scoreformated = number_format($score);
+		$output .= "<tr><td>".$scoreformated."</td><td>".lookupSimNumber($sim)."</td></tr>";
+	}
+	if ($output=="") $output.="No Scores Found For Current User.";
+	else $output = "<table><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+    
+    
+	}
+	
+	//All Stats - Top Bar
+  	if ($view->storage->id() == 'user_profile_stats' && $view->current_display == 'block_1' && $field->field == 'uid') {
+  	global $uuid;
+  	$uuid =$variables['output'];
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$output="";
+
+  //Total People
+	$totalpple=0;
+	$totaltime=0;
+  	$query = $con->query('SELECT sum(pd.Challenge2) c1, sum(SimDuration) tm '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid ', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$totalpple = $item->c1;
+		//$totaltime = $item->tm;
+		$hours = floor($item->tm/(60*60));
+		$mins = date("i",$item->tm);
+		$secs = date("s",$item->tm);
+		$totaltime = $hours." hours ".$mins." mins ".$secs." seconds";
+	}
+	if ($totaltime=="") $totaltime=0;
+	if ($totalpple=="") $totalpple=0;
+	$totalpeopleformated = number_format($totalpple);
+
+  //Total Challenges
+ 	$completedchallenges=0;
+ 	
+ 	
+ 	$query = $con->query(' select sid.field_ride_sim_id_value sim, v1.field_challenge_sql_value_1_value val1, v2.field_challenge_sql_value_2_target_id val2, v3.field_challenge_sql_value_3_value val3, v4.field_challenge_sql_value_4_target_id val4, v5.field_challenge_sql_value_5_target_id val5 '.
+		' FROM '.
+	 	' `ex1i_node__field_challenge_sql_value_1` v1, '.
+	 	' `ex1i_node__field_challenge_sql_value_2` v2, '.
+	 	' `ex1i_node__field_challenge_sql_value_3` v3, '.
+	 	' `ex1i_node__field_challenge_sql_value_4` v4, '.
+	 	' `ex1i_node__field_challenge_sql_value_5` v5, '.
+	 	' `ex1i_node__field_based_upon_simulator` s, '.
+	 	' `ex1i_node__field_ride_sim_id` sid, '.
+ 		' `ex1i_node__field_beta_mode` b '. 
+ 		' WHERE '.
+ 		' v1.entity_id = v2.entity_id '.
+ 		' AND v1.entity_id = v3.entity_id '.
+ 		' AND v1.entity_id = v4.entity_id '.
+ 		' AND v1.entity_id = v5.entity_id '.
+ 		' AND v1.entity_id = s.entity_id '.
+ 		' AND b.entity_id = s.field_based_upon_simulator_target_id '.
+ 		' AND b.entity_id = sid.entity_id '.
+ 		' AND b.field_beta_mode_value=0 ' 
+ 		); 	
+ 	$data = $query->fetchAll();
+ 	$allmedals=0;
+ 	foreach($data as $item) {
+		$v1=$item->val1;
+		$v2=$item->val2;
+		$v3=$item->val3;
+		$v4=$item->val4;
+		$v5=$item->val5;
+		$sim = $item->sim;
+		$parts=array($v1,$v2,$v3,$v4,"","",$v5);
+		$allmedals++;
+		if (checkChallengeCompleted($con,$uuid,$sim,$parts))$completedchallenges++;
+ 	}
+	
+	  //mostplayedsim
+	$mostplayedsim = 'None Played';
+	$mostplayedsimtime = 0;
+  	$query = $con->query('SELECT sum(SimDuration) tm, sim '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by sim order by tm DESC LIMIT 1', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$mostplayedsim = lookupSimNumber($item->sim);
+		$mostplayedsimtime = $item->tm;
+	}
+	
+ 	$output .= "<div class='TotalUserStats'><p class='Title'>Total Sim Hours Logged </p><p class='Value'>".$totaltime."</p></div>";
+ 	$output .= "<div class='TotalUserStats'><p class='Title'>Total Sim Peeps Handled </p><p class='Value'>".$totalpeopleformated."</p></div>";
+ 	$output .= "<div class='TotalUserStats'><p class='Title'>Total Challenges Completed </p><p class='Value'>".$completedchallenges." Out Of ".$allmedals."</p></div>";
+ 	
+ 	//Update Challenges Complete Table
+ 	//updateChallengesCompletedTable($uuid,$completedchallenges);
+ 	
+ 	
+ 	$output .= "<div class='TotalUserStats'><p class='Title'>Most Played Sim </p><p class='Value'>".$mostplayedsim."</p></div>";    
+    
+    $variables['output'] = $output;
+	}		
+	
+	//Homepage Banners - Play Now / Register Now
+  	if ($view->storage->id() == 'homepage_banner_display' && $view->current_display == 'block_1' && $field->field == 'field_play_now_link') {
+  	$output = "";
+  	$playnowlabellink =$variables['output'];
+    
+    $uid = \Drupal::currentUser()->id();
+    $user = \Drupal\user\Entity\User::load($uid);
+    if ($uid != 0) {
+		//Logged in
+		
+		if ($playnowlabellink == "MyAccount"){
+		$output.= '<a class="playnowbuttonhomepage" href="/user/'.lookupUserNumber($uid).'">View Now</a>';
+		}else{
+				$output.= '<a class="playnowbuttonhomepage" href="/ride-simulators/'.$playnowlabellink.'">Play Now</a>';
+		}
+	
+		}else{
+			//Not logged in
+			$output.= '<a class="playnowbuttonhomepage" href="/user/register">Register</a>';
+		}
+		 	
+    $variables['output'] = $output;
+	}		
+	
+	//Get Top 5 Player Scores Per Sim - Staff Beta Sims - New For 2020 - Filters
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_1' && $field->field == 'field_ride_sim_id') {
+  	global $globalsimid;
+  	$loggedin_uid = \Drupal::currentUser()->id();
+  	//$loggedin_uname = \Drupal::currentUser()->name();
+  	
+  	$globalsimid =$variables['output'];
+  	$sim_id =$variables['output'];
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	
+  	$timetabs = array('Last 30 days'=>' AND `datetime`>DATE_SUB(NOW(), interval 30 day)', 'Last 365 days'=>' AND `datetime`>DATE_SUB(NOW(), interval 365 day)', 'All Time'=>'');
+
+  	foreach($timetabs as $label=>$interval){
+  		$firstlnospace=str_replace(' ','_',$label);
+  		break;
+	}
+  	$output='
+<script>
+  	function openTab(evt, shownid) {
+  // Declare all variables
+  var i, tabcontent, tablinks;
+
+  // Get all elements with class="tabcontent" and hide them
+  tabcontent = document.getElementsByClassName("tabcontent");
+  for (i = 0; i < tabcontent.length; i++) {
+    tabcontent[i].style.display = "none";
+  }
+
+  // Get all elements with class="tablinks" and remove the class "active"
+  tablinks = document.getElementsByClassName("tablink");
+  for (i = 0; i < tablinks.length; i++) {
+    tablinks[i].className = tablinks[i].className.replace(" active", "");
+  }
+
+  // Show the current tab, and add an "active" class to the button that opened the tab
+  document.getElementById(shownid).style.display = "block";
+  evt.currentTarget.className += " active";
+}
+
+setTimeout(function(){
+document.getElementById("btn_'.$firstlnospace.'").click();
+}, 100);
+</script>
+  	';
+  	
+  	$output.='<div class="tabs">';
+  	foreach($timetabs as $label=>$interval){
+  		$lnospace=str_replace(' ','_',$label);
+		$output.='<div id="btn_'.$lnospace.'" onclick="openTab(event,'."'int_".$lnospace."'".');" class="tablink">'.$label.'</div>';
+	}
+	$output.='</div>';
+  	foreach($timetabs as $label=>$interval){
+  	
+	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC ', array(':sim' => $sim_id));
+//	  	$output.="____".'SELECT max(score) score, username uid from playerdata where sim = '.$sim_id.' '.$interval.' group by username order by score DESC '."___ ";
+		$data = $query->fetchAll();
+		$counter= 0;
+		$foundme=false;
+		$loutput='';
+		$output.='<div id="int_'.str_replace(' ','_',$label).'" class="tabcontent">';
+		foreach($data as $item) {
+			$counter++;
+			if (($counter<6) || ($item->uid == $loggedin_uid)){
+				$userid = $item->uid;
+				$score = $item->score;
+				$uname=lookupUserNumber($userid);
+				$scoreformatted = number_format($score);
+				$loutput .= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td>$counter</td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".($scoreformatted)."</td></tr>";
+				if ($item->uid == $loggedin_uid) $foundme=true;
+			}
+			if (($counter>5) && $foundme) break;
+		}
+		if (($counter>0) && (!$foundme)){
+			$uname = lookupUserNumber($loggedin_uid);
+			$loutput.= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>0</td></tr>";
+		}
+		if ($counter==0) $output .= "No one has played this simulator in this time period.";
+		else $output .= "<table><tr></th></tr>".$loutput."</table>";
+		$output.= '</div>';
+	}
+	
+    $variables['output'] = $output;
+	}
+	
+	//Get Top 5 Player Scores Per Sim - Staff Beta Sims - New For 2020 - Filters
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_2' && $field->field == 'field_ride_sim_id') {
+  	global $globalsimid;
+  	$loggedin_uid = \Drupal::currentUser()->id();
+  	//$loggedin_uname = \Drupal::currentUser()->name();
+  	
+  	$globalsimid =$variables['output'];
+  	$sim_id =$variables['output'];
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	
+  	$timetabs = array('Last 30 days'=>' AND `datetime`>DATE_SUB(NOW(), interval 30 day)', 'Last 365 days'=>' AND `datetime`>DATE_SUB(NOW(), interval 365 day)', 'All Time'=>'');
+
+  	foreach($timetabs as $label=>$interval){
+  		$firstlnospace=str_replace(' ','_',$label);
+  		break;
+	}
+  	$output='
+<script>
+  	function openTab(evt, shownid) {
+  // Declare all variables
+  var i, tabcontent, tablinks;
+
+  // Get all elements with class="tabcontent" and hide them
+  tabcontent = document.getElementsByClassName("tabcontent");
+  for (i = 0; i < tabcontent.length; i++) {
+    tabcontent[i].style.display = "none";
+  }
+
+  // Get all elements with class="tablinks" and remove the class "active"
+  tablinks = document.getElementsByClassName("tablink");
+  for (i = 0; i < tablinks.length; i++) {
+    tablinks[i].className = tablinks[i].className.replace(" active", "");
+  }
+
+  // Show the current tab, and add an "active" class to the button that opened the tab
+  document.getElementById(shownid).style.display = "block";
+  evt.currentTarget.className += " active";
+}
+
+setTimeout(function(){
+document.getElementById("btn_'.$firstlnospace.'").click();
+}, 100);
+</script>
+  	';
+  	
+  	$output.='<div class="tabs">';
+  	foreach($timetabs as $label=>$interval){
+  		$lnospace=str_replace(' ','_',$label);
+		$output.='<div id="btn_'.$lnospace.'" onclick="openTab(event,'."'int_".$lnospace."'".');" class="tablink">'.$label.'</div>';
+	}
+	$output.='</div>';
+  	foreach($timetabs as $label=>$interval){
+  	
+	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC ', array(':sim' => $sim_id));
+//	  	$output.="____".'SELECT max(score) score, username uid from playerdata where sim = '.$sim_id.' '.$interval.' group by username order by score DESC '."___ ";
+		$data = $query->fetchAll();
+		$counter= 0;
+		$foundme=false;
+		$loutput='';
+		$output.='<div id="int_'.str_replace(' ','_',$label).'" class="tabcontent">';
+		foreach($data as $item) {
+			$counter++;
+			if (($counter<6) || ($item->uid == $loggedin_uid)){
+				$userid = $item->uid;
+				$score = $item->score;
+				$uname=lookupUserNumber($userid);
+				$scoreformatted = number_format($score);
+				$loutput .= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td>$counter</td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".($scoreformatted)."</td></tr>";
+				if ($item->uid == $loggedin_uid) $foundme=true;
+			}
+			if (($counter>5) && $foundme) break;
+		}
+		if (($counter>0) && (!$foundme)){
+			$uname = lookupUserNumber($loggedin_uid);
+			$loutput.= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>0</td></tr>";
+		}
+		if ($counter==0) $output .= "No one has played this simulator in this time period.";
+		else $output .= "<table><tr></th></tr>".$loutput."</table>";
+		$output.= '</div>';
+	}
+	
+    $variables['output'] = $output;
+	}
+	
+	//Get Top 5 Player Scores Per Sim - 3 Tab Filter System
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_3' && $field->field == 'field_ride_sim_id') {
+  	global $globalsimid;
+  	$loggedin_uid = \Drupal::currentUser()->id();
+  	//$loggedin_uname = \Drupal::currentUser()->name();
+  	
+  	$globalsimid =$variables['output'];
+  	$sim_id =$variables['output'];
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	
+  	$timetabs = array('Last 30 days'=>' AND `datetime`>DATE_SUB(NOW(), interval 30 day)', 'Last 365 days'=>' AND `datetime`>DATE_SUB(NOW(), interval 365 day)', 'All Time'=>'');
+
+  	foreach($timetabs as $label=>$interval){
+  		$firstlnospace=str_replace(' ','_',$label);
+  		break;
+	}
+  	$output='
+<script>
+  	function openTab(evt, shownid) {
+  // Declare all variables
+  var i, tabcontent, tablinks;
+
+  // Get all elements with class="tabcontent" and hide them
+  tabcontent = document.getElementsByClassName("tabcontent");
+  for (i = 0; i < tabcontent.length; i++) {
+    tabcontent[i].style.display = "none";
+  }
+
+  // Get all elements with class="tablinks" and remove the class "active"
+  tablinks = document.getElementsByClassName("tablink");
+  for (i = 0; i < tablinks.length; i++) {
+    tablinks[i].className = tablinks[i].className.replace(" active", "");
+  }
+
+  // Show the current tab, and add an "active" class to the button that opened the tab
+  document.getElementById(shownid).style.display = "block";
+  evt.currentTarget.className += " active";
+}
+
+setTimeout(function(){
+document.getElementById("btn_'.$firstlnospace.'").click();
+}, 100);
+</script>
+  	';
+  	
+  	$output.='<div class="tabs">';
+  	foreach($timetabs as $label=>$interval){
+  		$lnospace=str_replace(' ','_',$label);
+		$output.='<div id="btn_'.$lnospace.'" onclick="openTab(event,'."'int_".$lnospace."'".');" class="tablink">'.$label.'</div>';
+	}
+	$output.='</div>';
+  	foreach($timetabs as $label=>$interval){
+  	
+	  	$query = $con->query('SELECT max(score) score, username uid from playerdata where sim = :sim '.$interval.' group by username order by score DESC ', array(':sim' => $sim_id));
+//	  	$output.="____".'SELECT max(score) score, username uid from playerdata where sim = '.$sim_id.' '.$interval.' group by username order by score DESC '."___ ";
+		$data = $query->fetchAll();
+		$counter= 0;
+		$foundme=false;
+		$loutput='';
+		$output.='<div id="int_'.str_replace(' ','_',$label).'" class="tabcontent">';
+		foreach($data as $item) {
+			$counter++;
+			if (($counter<6) || ($item->uid == $loggedin_uid)){
+				$userid = $item->uid;
+				$score = $item->score;
+				$uname=lookupUserNumber($userid);
+				$scoreformatted = number_format($score);
+				$loutput .= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td>$counter</td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".($scoreformatted)."</td></tr>";
+				if ($item->uid == $loggedin_uid) $foundme=true;
+			}
+			if (($counter>5) && $foundme) break;
+		}
+		if (($counter>0) && (!$foundme)){
+			$uname = lookupUserNumber($loggedin_uid);
+			$loutput.= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td></td><td><a href='/user/".$uname."'>".$uname."</a></td><td>0</td></tr>";
+		}
+		if ($counter==0) $output .= "No one has played this simulator in this time period.";
+		else $output .= "<table><tr></th></tr>".$loutput."</table>";
+		$output.= '</div>';
+	}
+	
+    $variables['output'] = $output;
+	}
+
+  	//Top 5 Player Throughput Scores Per Sim - Public Sims 
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_1' && $field->field == 'field_throughput_count') {
+  	global $globalsimid;
+	$loggedin_uid = \Drupal::currentUser()->id();
+
+  	$sim_id =$variables['output'];
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
+  			' FROM playerdata '.
+  			' where sim = :simid '.
+  			' group by username order by score DESC ', array(':simid' => $globalsimid));
+	$data = $query->fetchAll();
+	$output="";
+	$counter= 1;
+	$foundme=false;
+	foreach($data as $item) {
+		if (($counter<6) || ($item->uid == $loggedin_uid)){
+			$uname = lookupUserNumber($item->uid);
+			$score = $item->score;
+			$scoreformatted = number_format($score);
+			$output .= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td>$counter</td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".($scoreformatted)."</td></tr>";
+			if ($item->uid == $loggedin_uid) $foundme=true;
+		}
+		if (($counter>5) && $foundme) break;
+		$counter++;
+
+	}
+	if ($output=="") $output = "No one has played this simulator yet.";
+	else $output = "<table><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+	}	
+	
+  	//Top 5 Player Throughput Scores Per Sim - Pateron Beta Sims 
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_2' && $field->field == 'field_throughput_count') {
+  	global $globalsimid;
+	$loggedin_uid = \Drupal::currentUser()->id();
+
+  	$sim_id =$variables['output'];
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
+  			' FROM playerdata '.
+  			' where sim = :simid '.
+  			' group by username order by score DESC ', array(':simid' => $globalsimid));
+	$data = $query->fetchAll();
+	$output="";
+	$counter= 1;
+	$foundme=false;
+	foreach($data as $item) {
+		if (($counter<6) || ($item->uid == $loggedin_uid)){
+			$uname = lookupUserNumber($item->uid);
+			$score = $item->score;
+			$scoreformatted = number_format($score);
+			$output .= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td>$counter</td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".($scoreformatted)."</td></tr>";
+			if ($item->uid == $loggedin_uid) $foundme=true;
+		}
+		if (($counter>5) && $foundme) break;
+		$counter++;
+
+	}
+	if ($output=="") $output = "No one has played this simulator yet.";
+	else $output = "<table><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+	}	
+	
+  	//Top 5 Player Throughput Scores Per Sim - Staff Beta Sims 
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_3' && $field->field == 'field_throughput_count') {
+  	global $globalsimid;
+	$loggedin_uid = \Drupal::currentUser()->id();
+
+  	$sim_id =$variables['output'];
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT username uid, sum(Challenge2)/(sum(SimDuration)/3600) score '.
+  			' FROM playerdata '.
+  			' where sim = :simid '.
+  			' group by username order by score DESC ', array(':simid' => $globalsimid));
+	$data = $query->fetchAll();
+	$output="";
+	$counter= 1;
+	$foundme=false;
+	foreach($data as $item) {
+		if (($counter<6) || ($item->uid == $loggedin_uid)){
+			$uname = lookupUserNumber($item->uid);
+			$score = $item->score;
+			$scoreformatted = number_format($score);
+			$output .= "<tr ".($item->uid == $loggedin_uid?' class="myscore" ':'')."><td>$counter</td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".($scoreformatted)."</td></tr>";
+			if ($item->uid == $loggedin_uid) $foundme=true;
+		}
+		if (($counter>5) && $foundme) break;
+		$counter++;
+
+	}
+	if ($output=="") $output = "No one has played this simulator yet.";
+	else $output = "<table><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+	}	
+	
+  	//Get Ride Sims Medals From Database - Public Sims
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_1' && $field->field == 'field_ride_sim_difficulty_') {
+  	global $globalsimid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT f.uri img, b.field_challenge_title_value title, d.field_challenge_description_value descr from `ex1i_node__field_ride_sim_id` s, '.
+  	' `ex1i_node__field_based_upon_simulator` a, `ex1i_node__field_challenge_title` b, `ex1i_node__field_challenge_medal` c,'.
+	' `ex1i_node__field_challenge_description` d, '.
+  	' `ex1i_file_managed` f '.
+  	' where a.field_based_upon_simulator_target_id = s.entity_id AND s.field_ride_sim_id_value = :simid AND a.entity_id = b.entity_id AND a.entity_id=d.entity_id AND a.entity_id = c.entity_id AND f.fid = c.field_challenge_medal_target_id ', array(':simid' => $globalsimid));
+	$data = $query->fetchAll();
+	$output="";
+	foreach($data as $item) {
+		$output .= "<div class='rsmedals' title='".str_replace("'","`",strip_tags($item->descr))."'>";
+		$output .="<img src='".str_replace('public:/','/sites/default/files/', $item->img)."' >";
+		$output .= "<div>".$item->title."</div>";
+		$output .= "</div>";
+	}
+ 	if ($output=="") $output = "No challenges found for this simulator.";
+ 	else $output = "<div class='rs_medal_list'>".$output."</div>";
+    $variables['output'] = $output;
+    
+	}		
+
+  	//Get Ride Sims Medals From Database - Patreon Beta Sims
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_2' && $field->field == 'field_ride_sim_difficulty_') {
+  	global $globalsimid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT f.uri img, b.field_challenge_title_value title, d.field_challenge_description_value descr from `ex1i_node__field_ride_sim_id` s, '.
+  	' `ex1i_node__field_based_upon_simulator` a, `ex1i_node__field_challenge_title` b, `ex1i_node__field_challenge_medal` c,'.
+	' `ex1i_node__field_challenge_description` d, '.
+  	' `ex1i_file_managed` f '.
+  	' where a.field_based_upon_simulator_target_id = s.entity_id AND s.field_ride_sim_id_value = :simid AND a.entity_id = b.entity_id AND a.entity_id=d.entity_id AND a.entity_id = c.entity_id AND f.fid = c.field_challenge_medal_target_id ', array(':simid' => $globalsimid));
+	$data = $query->fetchAll();
+	$output="";
+	foreach($data as $item) {
+		$output .= "<div class='rsmedals' title='".strip_tags($item->descr)."'>";
+		$output .="<img src='".str_replace('public:/','/sites/default/files/', $item->img)."' >";
+		$output .= "<div>".$item->title."</div>";
+		$output .= "</div>";
+	}
+ 	if ($output=="") $output = "No challenges found for this simulator.";
+ 	else $output = "<div class='rs_medal_list'>".$output."</div>";
+    $variables['output'] = $output;
+    
+	}		
+	
+	//Get Ride Sims Medals From Database - Staff Beta Sims
+  	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_3' && $field->field == 'field_ride_sim_difficulty_') {
+  	global $globalsimid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT f.uri img, b.field_challenge_title_value title, d.field_challenge_description_value descr from `ex1i_node__field_ride_sim_id` s, '.
+  	' `ex1i_node__field_based_upon_simulator` a, `ex1i_node__field_challenge_title` b, `ex1i_node__field_challenge_medal` c,'.
+	' `ex1i_node__field_challenge_description` d, '.
+  	' `ex1i_file_managed` f '.
+  	' where a.field_based_upon_simulator_target_id = s.entity_id AND s.field_ride_sim_id_value = :simid AND a.entity_id = b.entity_id AND a.entity_id=d.entity_id AND a.entity_id = c.entity_id AND f.fid = c.field_challenge_medal_target_id ', array(':simid' => $globalsimid));
+	$data = $query->fetchAll();
+	$output="";
+	foreach($data as $item) {
+		$output .= "<div class='rsmedals' title='".strip_tags($item->descr)."'>";
+		$output .="<img src='".str_replace('public:/','/sites/default/files/', $item->img)."' >";
+		$output .= "<div>".$item->title."</div>";
+		$output .= "</div>";
+	}
+ 	if ($output=="") $output = "No challenges found for this simulator.";
+ 	else $output = "<div class='rs_medal_list'>".$output."</div>";
+    $variables['output'] = $output;
+    
+	}		
+		
+  	//Total People Handled - Profile Stats
+  	if ($view->storage->id() == 'user_profile_stats' && $view->current_display == 'block_2' && $field->field == 'created') {
+  	global $uuid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT sum(pd.Challenge2) c1, pd.sim '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by pd.sim order by c1 DESC LIMIT 3', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	$output="";
+	foreach($data as $item) {
+	
+		$score = $item->c1;
+		$scoreformated = number_format($score);
+	
+		$output .= "<tr><td>".$scoreformated."</td><td>".lookupSimNumber($item->sim)."</td></tr>";
+	}
+ 	if ($output=="") $output = "No Scores Found For Current User.";
+ 	else $output = "<table class='totalpeopleforuser'><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+	}		
+
+	//Sim Of The Week
+ 	if ($view->storage->id() == 'sim_of_the_week' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim_id') {
+ 	  	$ridesimvar =$variables['output'];
+  		$simofweek =explode("|",$ridesimvar);  		
+		$simid= trim($simofweek[2]);
+		$simurl= trim($simofweek[3]);
+   		$con = \Drupal\Core\Database\Database::getConnection('default');
+   		$query = $con->query('SELECT COUNT(score) simplaycount FROM playerdata WHERE sim = :simid', array(':simid' => $simid));
+		$data = $query->fetchAll();
+		$output="";
+		foreach($data as $item) {
+			$simplaycount = $item->simplaycount;
+		}
+		
+		$simplaycountformated = number_format($simplaycount);
+		
+		$formattedoutput = "<div class='SimOfWeekImg'>".$simofweek[0]."<div class='SimOfWeekTitle'>".$simofweek[1]."</div><div class='PlayCount'>"."Played ".$simplaycountformated."  Times."."</div>";
+		
+		
+		$uid = \Drupal::currentUser()->id();
+   		$user = \Drupal\user\Entity\User::load($uid);
+    	if ($uid != 0) {
+			//Logged in
+			$formattedoutput.= "<a class='playnowbutton' href='/ride-simulators/".$simurl."'>Play Now</a></div>";
+			}else{
+				//Not logged in
+				$formattedoutput.= "<a class='playnowbutton' href='/user/register"."'>Register</a></div>";
+			}   		
+   		$variables['output'] = $formattedoutput;
+	}
+	
+	//Challenge Of The Week
+ 	if ($view->storage->id() == 'challenge_of_the_week' && $view->current_display == 'block_1' && $field->field == 'field_based_upon_simulator') {
+ 	  	$challengevar =$variables['output'];
+  		$challengeofweek =explode("|",$challengevar);  		
+		$ridesimname= trim($challengeofweek[2]);
+		$ridesimname = str_replace("&#039;","'",$ridesimname); 
+  		$con = \Drupal\Core\Database\Database::getConnection('default');
+  		
+  		
+  		
+  		
+		$query = $con->query('SELECT efm.`uri` img, enfun.field_url_name_value link'.
+  						' FROM `ex1i_node__field_ride_sim` frs, '.
+  						' `ex1i_node__field_ride_sim_promo_large` frsp,'.
+  						' `ex1i_file_managed` efm, '.
+  						' `ex1i_node__field_url_name` enfun '.
+  						'  where frs.entity_id = frsp.entity_id '.
+  						'  and frs.entity_id = enfun.entity_id '.
+  						'  and frsp.field_ride_sim_promo_large_target_id = efm.fid'.
+  						'  and frs.field_ride_sim_value=:sim ', array(":sim"=>$ridesimname));
+		$data = $query->fetchAll();
+		$formattedoutput = "<div class='Challengeoftheweek'><div class='ChallengeOfWeekImg'>";
+		foreach($data as $item) {
+			$formattedoutput .="<img src='".str_replace('public:/','/sites/default/files/', $item->img)."' >";
+			$link=$item->link;
+		}
+		
+		
+
+		$formattedoutput .="</div><div class='ChallengeOfWeekIcon'>".$challengeofweek[0]."</div>". "<div class='ChallengeOfWeekTitles'>".$challengeofweek[1]."</div>";
+   		
+   		
+   		$uid = \Drupal::currentUser()->id();
+   		$user = \Drupal\user\Entity\User::load($uid);
+    	if ($uid != 0) {
+			//Logged in
+			$formattedoutput.= "<a class='playnowbutton' href='/ride-simulators/".$link."'>Play Now</a></div>";
+			}else{
+				//Not logged in
+				$formattedoutput.= "<a class='playnowbutton' href='/user/register"."'>Register</a></div>";
+			}   		
+   		
+   		
+   		
+   		$variables['output'] = $formattedoutput;
+ 	}
+
+	//Challenge Of The Week - Ride Sims View
+ 	if ($view->storage->id() == 'challenge_of_the_week' && $view->current_display == 'block_2' && $field->field == 'field_based_upon_simulator') {
+ 	  	$challengevar =$variables['output'];
+  		$challengeofweek =explode("|",$challengevar);  		
+		$ridesimname= trim($challengeofweek[2]);
+		$ridesimname = str_replace("&#039;","'",$ridesimname); 
+  		$con = \Drupal\Core\Database\Database::getConnection('default');
+  		
+  		
+  		
+  		
+		$query = $con->query('SELECT efm.`uri` img, enfun.field_url_name_value link'.
+  						' FROM `ex1i_node__field_ride_sim` frs, '.
+  						' `ex1i_node__field_ride_sim_promo_large` frsp,'.
+  						' `ex1i_file_managed` efm, '.
+  						' `ex1i_node__field_url_name` enfun '.
+  						'  where frs.entity_id = frsp.entity_id '.
+  						'  and frs.entity_id = enfun.entity_id '.
+  						'  and frsp.field_ride_sim_promo_large_target_id = efm.fid'.
+  						'  and frs.field_ride_sim_value=:sim ', array(":sim"=>$ridesimname));
+		$data = $query->fetchAll();
+		$formattedoutput = "<div class='Challengeoftheweek'>";
+		foreach($data as $item) {
+			$formattedoutput .="<img class='RoundedChallenge' src='".str_replace('public:/','/sites/default/files/', $item->img)."' >";
+			$link=$item->link;
+		}
+		
+		
+		$formattedoutput .="<div class='ChallengeOfWeekTitles'>".$challengeofweek[1]."</div>";
+   		
+		$uid = \Drupal::currentUser()->id();
+   		$user = \Drupal\user\Entity\User::load($uid);
+    	if ($uid != 0) {
+			//Logged in
+			$formattedoutput.= "<a class='challengeofweekbutton' href='/ride-simulators/".$link."'>Challenge On!</a>";
+			}else{
+				//Not logged in
+				$formattedoutput.= "<a class='challengeofweekbutton' href='/user/register"."'>Register</a></div>";
+			}     		
+   		
+   		
+   		$formattedoutput .="<p class='ChallengeOfTheWeekEnd'> Will you be able to complete this week's challenge?</p></div>";
+   		$variables['output'] = $formattedoutput;
+ 	}
+
+	//Top 3 Time Sims User Sims - Profile Stats
+ 	if ($view->storage->id() == 'user_profile_stats' && $view->current_display == 'block_2' && $field->field == 'uuid') {
+  	global $uuid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT sum(pd.SimDuration) playtime, pd.sim, pd.username '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by pd.sim, username order by playtime DESC LIMIT 3', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	$output="";
+	foreach($data as $item) {
+		$username = $item->username;
+		$sim = $item->sim;
+		$hours = floor($item->playtime/(60*60));
+		$mins = date("i",$item->playtime);
+		$secs = date("s",$item->playtime);
+		$time = $hours." hours ".$mins." mins ".$secs." seconds";
+		$output .= "<tr><td>".$time."</td><td>".lookupSimNumber($sim)."</td></tr>";
+	}
+	if ($output=="") $output.="No Scores Found For Current User.";
+	else $output = "<table><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+	}
+	
+	//Find Users Site Roles 	
+  	if ($view->storage->id() == 'user_profile_stats' && $view->current_display == 'block_1' && $field->field == 'roles_target_id') {
+  		global $userroles;
+  		$userroles =$variables['output'];
+  
+  		
+	}	
+
+//User Badges System - James fixed but doesnt work 
+// if ($view->storage->id() == 'user_badges' && $view->current_display == 'block_1' && $field->field == 'field_job_role_or_date') {
+//     global $userroles;
+//     global $uuid;
+//     static $dispcounter = 0;
+//     static $foundabadge = false;
+//     static $medalcount = 0;
+//     if ($uuid == '') {
+//         $variables['output'] = '<script> ' .
+//             ' setTimeout( function(){ document.getElementById("block-views-block-user-badges-block-1").style.display="none"; ' .
+//             ' document.getElementById("block-usermedalstitle").style.display="none"; ' .
+//             ' document.getElementById("block-simlogtitle").style.display="none"; ' .
+//             ' document.getElementById("block-views-block-sim-log-2-block-1").style.display="none"; ' .
+//             ' document.getElementById("block-views-block-sim-log-3-block-1").style.display="none"; ' .
+//             ' document.getElementById("block-views-block-sim-log-4-block-1").style.display="none"; ' .
+//             ' document.getElementById("block-views-block-user-challenges-block-1").style.display="none"; ' .
+//             ' }, 1);</script>';
+// 
+//         return;
+//     }
+// 
+//     $con = \Drupal\Core\Database\Database::getConnection('default');
+// 
+//     if ($dispcounter == 0) {
+//         $query = $con->query('SELECT count(*) medals FROM `ex1i_node__field_badge_name`');
+//         $data = $query->fetchAll();
+//         foreach ($data as $item) {
+//             $medalcount = $item->medals;
+//         }
+//     }
+// 
+//     $badge = $variables['output'];
+//     $extrasql = "";
+//     $params = array(':uuid' => $uuid);
+//     $badgearray = explode("|", $badge);
+// 
+//     $conds = explode("@", trim($badgearray[1]));
+// 
+//     $when = str_replace("&amp;", "&", trim($conds[0]));
+// 
+//     $whens = explode("&", $when);
+// 
+//     switch (count($whens)) {
+//         case 2:
+//             $extrasql .= " and date(`DateTime`) BETWEEN '" . trim($whens[0]) . "' AND '" . trim($whens[1]) . "' ";
+//             break;
+// 
+//         default:
+//             $extrasql .= "";
+//             break;
+//     }
+// 
+//     $sqlrunning = 'SELECT `username` FROM `playerdata` where `username`= ' . $uuid . ' ' . $extrasql . "";
+// 
+//     $query = $con->query('SELECT `username` FROM `playerdata` where `username`= ' . $uuid . ' ' . $extrasql . "");
+// 
+//     $data = $query->fetchAll();
+//     $found = false;
+//     foreach ($data as $item) {
+//         $found = true;
+//     }
+// 
+//     $completed = true;
+//     for ($c = 1; $c < count($conds) && $completed; $c++) {
+//         $segments = explode("&", $conds[$c]);
+// 
+//         $simbits = explode("=", $segments[0]);
+//         $scorebits = explode("=", $segments[1]);
+// 
+//         $parts = array(trim($scorebits[1]),
+//             "score",
+//             trim($simbits[1]),
+//             "sim",
+//             '',
+//             '');
+// 
+//         if (!checkChallengeCompleted($con, $uuid, '', $parts)) $completed = false;
+//     }
+// 
+//     $x = "";
+//     if ($found && $completed) {
+//         $x .= " date";
+//         $formattedoutput = "<div class='userbadgeicon'>" . $badgearray[2] . "<div class='title'>" . $badgearray[0] . "</div></div>";
+//         $variables['output'] = $formattedoutput;
+//         $foundabadge = true;
+//     } else {
+//         $x .= " role";
+//         $explodeduserroles = explode("|", $userroles);
+//         if (in_array(trim($badgearray[1]), $explodeduserroles) && $completed) {
+//             $x .= " foundrole";
+//             $formattedoutput = "<div class='userbadgeicon'>" . $badgearray[2] . "<div class='title'>" . $badgearray[0] . "</div></div>";
+//             $variables['output'] = $formattedoutput;
+//             $foundabadge = true;
+//         } else {
+//             $variables['output'] = '';
+//         }
+//     }
+//     $dispcounter++;
+//     if (($dispcounter == $medalcount) && (!$foundabadge)) {
+//         $variables['output'] = '<div class="NoBadgesFound">No badges unlocked yet. Check back soon!</div>';
+//     }
+// }
+//    	
+
+// 	//User Badges System - OG CODE
+//   	if($view->storage->id() == 'user_badges' && $view->current_display == 'block_1' && $field->field == 'field_job_role_or_date') {
+//   		global $userroles;
+// 		global $uuid;
+// 		static $dispcounter=0;
+// 		static $foundabadge=false;
+// 		static $medalcount=0;
+// 		if ($uuid=='') {
+// 			$variables['output']='<script> '.
+// 				' setTimeout( function(){ document.getElementById("block-views-block-user-badges-block-1").style.display="none"; '.
+// 				' document.getElementById("block-usermedalstitle").style.display="none"; '.
+// 				' document.getElementById("block-simlogtitle").style.display="none"; '.
+// 				' document.getElementById("block-views-block-sim-log-2-block-1").style.display="none"; '.
+// 				' document.getElementById("block-views-block-sim-log-3-block-1").style.display="none"; '.
+// 				' document.getElementById("block-views-block-sim-log-4-block-1").style.display="none"; '.
+// 				' document.getElementById("block-views-block-user-challenges-block-1").style.display="none"; '.
+// 				' }, 1);</script>'; 
+// 			
+// 			return;
+// 		}
+// 		
+//   		$con = \Drupal\Core\Database\Database::getConnection('default');
+//   		
+//   		if ($dispcounter==0){
+// 			$query = $con->query('SELECT count(*) medals FROM `ex1i_node__field_badge_name`');
+// 			$data = $query->fetchAll();
+// 			foreach($data as $item) {
+// 				$medalcount=$item->medals;
+// 			}
+// 		}
+//   		
+//   		$badge =$variables['output'];
+//   		$extrasql = "";
+//   		$params=array(':uuid' => $uuid);
+//   		$badgearray =explode("|",$badge);  		
+// 
+// 		$conds = explode("@",trim($badgearray[1]));
+// 		
+// 
+// 		$when = str_replace("&amp;","&",trim($conds[0]));
+// 
+// 		$whens = explode("&",$when);
+// 		switch(count($whens)){
+// 			case "2":
+// 				$extrasql .= " and  date(`DateTime`) BETWEEN :when AND :when2 " ;
+// 				$params[':when']= trim($whens[0]);
+// 				$params[':when2']= trim($whens[1]);
+// 			break;
+// 			default:
+// 				$extrasql .= " and  date(`DateTime`) = :when " ;
+// 				$params[':when']= $when;
+// 			break;
+// 		}
+// 	
+//   		$query = $con->query('SELECT `username` FROM `playerdata` where `username`= :uuid '.$extrasql."", $params);
+// 		$data = $query->fetchAll();
+// 		$found=false;
+// 		foreach($data as $item) {
+// 			$found=true;
+// 		}
+// 		
+// 		$completed=true;
+// 		for ($c=1; $c<count($conds) && $completed; $c++){
+// 			$segments = explode("&",$conds[$c]);
+// 			
+// 			
+// 			$simbits = explode("=",$segments[0]);
+// 			$scorebits = explode("=",$segments[1]);
+// 			
+// 			$parts = array(trim($scorebits[1]),
+// 							"score",
+// 							trim($simbits[1]),
+// 							"sim",
+// 							'',
+// 							'');
+// 			
+// 			//$wibble.=print_r($parts, true)." ----- ";
+// 			if (!checkChallengeCompleted($con,$uuid,'',$parts)) $completed=false;
+// 		}
+// 		
+// 		
+// 		
+// 		
+// 		$x="";
+// 		if ($found && $completed){ 
+// 			$x.=" date";
+// 	    	$formattedoutput = "<div class='userbadgeicon'>".$badgearray[2]."<div class='title'>".$badgearray[0]."</div></div>";
+//     		$variables['output'] = $formattedoutput;
+//   			$foundabadge=true;
+//   		} else {
+// 			$x.=" role";
+//   			$explodeduserroles =explode("|",$userroles);
+//   			if (in_array(trim($badgearray[1]),$explodeduserroles) && $completed) {
+// 					$x.=" foundrole";
+// 		    	$formattedoutput = "<div class='userbadgeicon'>".$badgearray[2]."<div class='title'>".$badgearray[0]."</div></div>";
+// 	    		$variables['output'] = $formattedoutput;
+// 	    		$foundabadge=true;
+//   			} else {
+//   				$variables['output']='';
+//   			}
+// 		}
+// 		$dispcounter++;
+// 		//if ($uuid==1)$variables['output'].= $wibble;
+// 		if (($dispcounter==$medalcount) && (!$foundabadge)) {
+// 			$variables['output']='<div class="NoBadgesFound">No badges unlocked yet. Check back soon!</div>';
+//   		} 	//$variables['output'] = " ".$extrasql." ";
+// 		//$variables['output'].= $x." ".$dispcounter." -- ".$medalcount."  ".($foundabadge?"Y":"N");
+//   	}	
+//   	
+
+
+//User Badges System - fixed - 9-02-25
+if($view->storage->id() == 'user_badges' && $view->current_display == 'block_1' && $field->field == 'field_job_role_or_date') {
+    global $userroles;
+    global $uuid;
+    static $dispcounter = 0;
+    static $foundabadge = false;
+    static $medalcount = 0;
+
+    // Early return for empty UUID with hide script
+    if ($uuid == '') {
+        $variables['output'] = '<script>
+            setTimeout(function() {
+                const elementsToHide = [
+                    "block-views-block-user-badges-block-1",
+                    "block-usermedalstitle",
+                    "block-simlogtitle",
+                    "block-views-block-sim-log-2-block-1",
+                    "block-views-block-sim-log-3-block-1",
+                    "block-views-block-sim-log-4-block-1",
+                    "block-views-block-user-challenges-block-1"
+                ];
+                elementsToHide.forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) element.style.display = "none";
+                });
+            }, 1);
+        </script>';
+        return;
+    }
+
+    try {
+        $con = \Drupal\Core\Database\Database::getConnection('default');
+        
+        // Get medal count if first run
+        if ($dispcounter == 0) {
+            try {
+                $query = $con->query('SELECT count(*) medals FROM `ex1i_node__field_badge_name`');
+                $result = $query->fetchAll();
+                $medalcount = !empty($result) ? $result[0]->medals : 0;
+            } catch (\Exception $e) {
+                // Silently continue if medal count query fails
+                $medalcount = 0;
+            }
+        }
+
+        $badge = $variables['output'];
+        $badgearray = explode("|", $badge);
+        
+        // Parse conditions
+        $conds = explode("@", trim($badgearray[1]));
+        $when = str_replace("&amp;", "&", trim($conds[0]));
+        $whens = explode("&", $when);
+        
+        // Build query parameters
+        $params = [':uuid' => $uuid];
+        $extrasql = "";
+        
+        if (count($whens) == 2) {
+            $extrasql = " and date(`DateTime`) BETWEEN :when AND :when2 ";
+            $params[':when'] = trim($whens[0]);
+            $params[':when2'] = trim($whens[1]);
+        } else {
+            $extrasql = " and date(`DateTime`) = :when ";
+            $params[':when'] = $when;
+        }
+
+        // Check user data
+        $found = false;
+        try {
+            $query = $con->query('SELECT `username` FROM `playerdata` WHERE `username` = :uuid ' . $extrasql, $params);
+            $data = $query->fetchAll();
+            $found = !empty($data);
+        } catch (\Exception $e) {
+            // Skip if query fails
+            $found = false;
+        }
+
+        // Check challenge completion
+        $completed = true;
+        for ($c = 1; $c < count($conds) && $completed; $c++) {
+            $segments = explode("&", $conds[$c]);
+            if (count($segments) >= 2) {
+                $simbits = explode("=", $segments[0]);
+                $scorebits = explode("=", $segments[1]);
+                
+                if (isset($simbits[1]) && isset($scorebits[1])) {
+                    $parts = [
+                        trim($scorebits[1]),
+                        "score",
+                        trim($simbits[1]),
+                        "sim",
+                        '',
+                        ''
+                    ];
+                    
+                    try {
+                        if (!checkChallengeCompleted($con, $uuid, '', $parts)) {
+                            $completed = false;
+                        }
+                    } catch (\Exception $e) {
+                        $completed = false;
+                    }
+                }
+            }
+        }
+
+        // Generate output
+        if ($found && $completed) {
+            $formattedoutput = "<div class='userbadgeicon'>{$badgearray[2]}<div class='title'>{$badgearray[0]}</div></div>";
+            $variables['output'] = $formattedoutput;
+            $foundabadge = true;
+        } else {
+            $explodeduserroles = explode("|", $userroles);
+            if (in_array(trim($badgearray[1]), $explodeduserroles) && $completed) {
+                $formattedoutput = "<div class='userbadgeicon'>{$badgearray[2]}<div class='title'>{$badgearray[0]}</div></div>";
+                $variables['output'] = $formattedoutput;
+                $foundabadge = true;
+            } else {
+                $variables['output'] = '';
+            }
+        }
+
+        $dispcounter++;
+        
+        // Show "No badges" message if needed
+        if (($dispcounter == $medalcount) && (!$foundabadge)) {
+            $variables['output'] = '<div class="NoBadgesFound">No badges unlocked yet. Check back soon!</div>';
+        }
+
+    } catch (\Exception $e) {
+        // If main try block fails, ensure empty output
+        $variables['output'] = '';
+    }
+}
+
+
+
+	//Challenge system code - get live sims from database
+  	if($view->storage->id() == 'user_challenges' && $view->current_display == 'block_1' && $field->field == 'field_challenge_sql_value_1') {
+	global $uuid;
+  	$sqlchallenge =$variables['output'];
+
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$extrasql = "";
+  	$output="";
+  	
+ 	$parts = explode("|",$sqlchallenge);
+
+    $sim = $parts[7];
+    $sim = html_entity_decode($sim, ENT_QUOTES); 
+	$sim=preg_replace("/[^A-Za-z0-9]/", '', $sim);
+
+	if (checkChallengeCompleted($con,$uuid,$sim,$parts)) $output .= $parts[4];
+	else $output .= $parts[5];
+    
+    $title = $parts[8];
+    
+    $formattedoutput = "<div class='simbadgeicon simname_".$sim."' title='".str_replace("'","`",strip_tags($parts[9]))."'>".$output."<div class='title'>".$title."</div></div>";
+    	
+    $variables['output'] = $formattedoutput;
+	}
+
+	//Sim Log 2 Code
+  	if($view->storage->id() == 'sim_log_2' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim') {
+	global $uuid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$extrasql = "";
+  	$output="";
+  	$query = $con->query(' SELECT rs.`field_ride_sim_value` '.
+  						' FROM `ex1i_node__field_ride_sim` rs, '.
+  						' `ex1i_node__field_beta_mode` b, '.
+  						' `ex1i_node__field_patreon_beta_mode` p '.
+  						' WHERE rs.entity_id = b.entity_id '.
+  						' AND b.field_beta_mode_value = 0 '.
+  						' AND rs.entity_id = p.entity_id '.
+   						' AND p.field_patreon_beta_mode_value=0 '.
+  						' ORDER by `field_ride_sim_value` ASC', array());
+	$data = $query->fetchAll();
+
+	$found=false;
+	$output.='<script>function handleRideSimNameClick(sim){ ';
+//	$output .=" console.log('in',sim); ";
+	$output .='nodes =  document.getElementsByClassName("shownsimbadges");';
+	$output .= 'while (nodes.length>0){ ';
+	$output .= ' nodes[0].className = nodes[0].className.replace(/\bshownsimbadges\b/g, "");;';
+	$output .= '}'; 
+
+	$output .='var nodes2 =  document.getElementsByClassName("simname_"+sim);';
+	$output .= 'for (var i=0; i<nodes2.length; i++){ ';
+	$output .= ' nodes2[i].classList.add("shownsimbadges");';
+	$output .= '}';
+	
+	$output .='nodes =  document.getElementsByClassName("shownsimselector");';
+	$output .= 'while (nodes.length>0){ ';
+	$output .= '  nodes[0].className = nodes[0].className.replace(/\bshownsimselector\b/g, "");;';
+	$output .= '}'; 
+	$output .='var nodes2 =  document.getElementById("simselector_"+sim);';
+	$output .= 'nodes2.classList.add("shownsimselector");';
+	
+	$output .='}</script>';
+	
+	$output .= "<ul class='sim_list'>";
+	$first='';
+	foreach($data as $item) {
+		$simname = preg_replace("/[^A-Za-z0-9]/", '', $item->field_ride_sim_value);
+		$output.="<li class='simselector' id='simselector_".$simname."' onclick='handleRideSimNameClick(\"".$simname."\");'>".$item->field_ride_sim_value."</li>";
+		if ($first=="") $first=$simname;
+	}
+	$output.= "</ul>";
+	if ($uuid!="") {
+	$output.="<script>setTimeout(function(){handleRideSimNameClick('".$first."');}, 1000);</script>";
+	$variables['output'] = $output;
+	} else $variables['output'] ='';
+}
+
+	//Sim Log 3 Code 
+  	if($view->storage->id() == 'sim_log_3' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim') {
+	global $uuid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$extrasql = "";
+  	$output="";
+  	$query = $con->query('SELECT frs.`field_ride_sim_value` name, efm.`uri` img, fstt.field_sim_top_tips_value descr '.
+  						' FROM `ex1i_node__field_ride_sim` frs, '.
+  						' `ex1i_node__field_ride_sim_promo_` frsp,'.
+  						' `ex1i_file_managed` efm, '.
+  						' `ex1i_node__field_sim_top_tips` fstt where fstt.entity_id=frs.entity_id AND frs.entity_id = frsp.entity_id and frsp.field_ride_sim_promo__target_id = efm.fid', array());
+	$data = $query->fetchAll();
+
+	$found=false;
+	
+	foreach($data as $item) {
+		$simname = preg_replace("/[^A-Za-z0-9]/", '', $item->name);
+		$output .="<div class='siminfo simname_".$simname."'>";
+		$output .="<img src='".str_replace('public:/','/sites/default/files/', $item->img)."' >";
+		$output .="<div class='simdescr'> ".$item->descr."</div>";
+		$output .="</div>";
+		
+	}
+	$variables['output'] = $output;
+}
+
+	//Sim Log 4 Code
+  	if($view->storage->id() == 'sim_log_4' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim') {
+	global $uuid;
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$extrasql = "";
+  	$output="";
+	//SimDuration = Time, Challenge2 = People, Score = Score
+  	$querysim = $con->query('SELECT a.`field_ride_sim_value` simname, b.`field_ride_sim_id_value` simnumber FROM `ex1i_node__field_ride_sim` a, `ex1i_node__field_ride_sim_id` b where a.entity_id = b.entity_id', array());
+	$datasim = $querysim->fetchAll();
+	foreach($datasim as $itemsim) {
+  		$sim_id = $itemsim->simnumber;
+	  	$query = $con->query('SELECT sim simnumber, MAX (score) maxscore, MAX(Challenge2) maxppl, SUM(SimDuration) playtime, sum(Challenge2) people, sum(Score) score FROM `playerdata` where `username`= :uuid AND sim = :sim group by sim', array(":uuid"=>$uuid, ":sim"=>$sim_id));
+		$data = $query->fetchAll();
+
+		$simname = preg_replace("/[^A-Za-z0-9]/", '', $itemsim->simname);
+		$ppl=0;
+		$maxppl=0;
+		$time=0;
+		$throughput=0;
+		$score=0;
+		$maxscore=0;
+	
+		foreach($data as $item) {
+			$found=true;
+			$ppl = $item->people;
+			$hours = floor($item->playtime/(60*60));
+			$mins = date("i",$item->playtime);
+			$secs = date("s",$item->playtime);
+			$time = $hours." hours ".$mins." mins ".$secs." seconds";
+			$throughput = floor(floatVal($item->people)/(floatVal($item->playtime)/3600)); 
+			$score=$item->score;
+			$maxppl = $item->maxppl;
+			$maxscore=$item->maxscore;
+		}
+		
+		$throughputformatted = number_format($throughput);
+		$peopleformatted = number_format($ppl);
+		$scoreformatted = number_format($score);
+		$maxpplformatted = number_format($maxppl);
+		$maxscoreformatted = number_format($maxscore);
+		
+		
+		$output .="<div class='simstats simname_".$simname."'>";
+		$output .="<div class='stat'><div class='title'>Peeps Handled (Highest Session / Total)</div><div class='value'>".($maxpplformatted!=$peopleformatted?$maxpplformatted." / ":"").$peopleformatted."</div></div>";
+		$output .="<div class='stat'><div class='title'>Time Played</div><div class='value'>".$time."</div></div>";
+		$output .="<div class='stat'><div class='title'>Throughput (pph)</div><div class='value'>".$throughputformatted."</div></div>";
+		$output .="<div class='stat'><div class='title'>Score (Highest Session / Total)</div><div class='value'>".($maxscoreformatted!=$scoreformatted?$maxscoreformatted." / ":"").$scoreformatted."</div></div>";
+		$output .="</div>";
+	}
+	$variables['output'] = $output;
+
+}
+
+	//Stats - Scores
+  	if($view->storage->id() == 'latest_scores' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim'){
+  	// defaults to Local London time
+  	
+  	
+function UTCDateToTimezone($dateTimeUTC = null, $timeZone = 'Europe/London', $dateFormat = 'Y-m-d H:i:s'){
+        $dateTimeUTC = $dateTimeUTC ? $dateTimeUTC : date("Y-m-d H:i:s");
+
+        $date = new DateTime($dateTimeUTC, new DateTimeZone('UTC'));
+        $date->setTimeZone(new DateTimeZone($timeZone));
+
+        return $date->format($dateFormat);
+}
+
+  	
+   	$con = \Drupal\Core\Database\Database::getConnection('default');
+   	$query = $con->query('SELECT pd.score, pd.sim, pd.username, DATE_FORMAT(pd.DateTime,'."'".'%d-%m-%Y %k:%i'."'".') dt, pd.DateTime , u.field_url_name_value url '.
+   					'from playerdata pd, '.
+   					' `ex1i_node__field_url_name` u, '.
+   					' `ex1i_node__field_ride_sim_id` si,'.
+   					' `ex1i_node__field_patreon_beta_mode` p, '.
+   					' `ex1i_node__field_beta_mode` b '. 
+   					' where pd.sim = si.field_ride_sim_id_value '.
+   					' AND si.entity_id=b.entity_id '.
+   					' AND b.field_beta_mode_value=0 '.
+   					' AND si.entity_id = u.entity_id '.
+   					' AND si.entity_id = p.entity_id '.
+   					' AND p.field_patreon_beta_mode_value=0 '.
+   					' order by DateTime DESC LIMIT 5', array());
+ 	$data = $query->fetchAll();
+ 	$output="";
+ 	foreach($data as $item) {
+ 		$username = $item->username;
+ 		$uname=lookupUserNumber($username);
+ 		$score = $item->score;
+ 		$simurl = $item->url;
+ 		$sim = $item->sim;
+		$when = UTCDateToTimezone($item->dt,'Europe/London','Y-m-d H:i');	
+
+		$simname = lookupSimNumber($sim);
+		$scoreformated = number_format($score);
+		$output .= "<tr><td>".$when."</td><td><a href='/user/".$uname."'>".$uname."</a></td><td><a href='/ride-simulators/".$simurl."'>".$simname."</a></td><td>".$scoreformated."</td></tr>";
+ 	}
+ 	if ($output=="") $output.="Nothing found.";
+ 	else $output = "<table><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+  	//$variables['output'] = "wibble world";
+  	
+  	
+  	}
+
+	//Stats - Sims
+  	if($view->storage->id() == 'latest_scores' && $view->current_display == 'block_2' && $field->field == 'field_ride_sim'){
+   	$con = \Drupal\Core\Database\Database::getConnection('default');
+   	$query = $con->query('SELECT  count(*) played, pd.sim, u.field_url_name_value url '.
+   					'from playerdata pd, '.
+   					' `ex1i_node__field_url_name` u, '.
+   					' `ex1i_node__field_ride_sim_id` si,'.
+   					' `ex1i_node__field_beta_mode` b, '. 
+   					' `ex1i_node__field_patreon_beta_mode` p '.
+   					' where pd.sim = si.field_ride_sim_id_value '.
+   					' AND si.entity_id=b.entity_id '.
+   					' AND b.field_beta_mode_value=0 '.
+   					' AND si.entity_id = u.entity_id '.
+   					' AND si.entity_id = p.entity_id '.
+   					' AND p.field_patreon_beta_mode_value=0 '.
+   					' group by sim,url order by played DESC LIMIT 5', array());
+ 	$data = $query->fetchAll();
+ 	$output="";
+ 	foreach($data as $item) {
+ 		$simurl = $item->url;
+ 		$sim = $item->sim;
+		$played = $item->played;
+		$simname = lookupSimNumber($sim);
+		$playedformatted = number_format($played);
+		$output .= "<tr><td><a href='/ride-simulators/".$simurl."'>".$simname."</a></td><td>".$playedformatted." Sessions.</td></tr>";
+ 	}
+ 	if ($output=="") $output.="Nothing found.";
+ 	else $output = "<table><tr></th></tr>".$output."</table>";
+    $variables['output'] = $output;
+  	//$variables['output'] = "wibble world";
+  	
+  	
+  	}
+
+	//Ride Sims Wrapped
+ 	if ($view->storage->id() == 'ride_sims_wrapped' && $view->current_display == 'block_1' && $field->field == 'title') {
+	
+	$output = "";
+	
+	$uid = \Drupal::currentUser()->id();
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+
+	
+	//People and Duration 	   
+	$totalyearpeople = 0;
+	$totalyearduration = 0;
+  	$query = $con->query("SELECT SUM(pd.Challenge2) People1, SUM(SimDuration) Duration1 FROM playerdata pd, `ex1i_node__field_ride_sim_id` si, `ex1i_node__field_beta_mode` b WHERE pd.sim = si.field_ride_sim_id_value AND si.entity_id = b.entity_id AND b.field_beta_mode_value = 0 AND pd.username = :uuid  AND `DateTime` >= '2022-01-01 00:00:00' and `DateTime` < '2022-12-31 00:00:00'", array(':uuid' => $uid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$totalyearpeople = ($item->People1);
+		//$totalyearduration = $item->Duration1;
+		$hours = floor($item->Duration1/(60*60));
+		$mins = date("i",$item->Duration1);
+		$secs = date("s",$item->Duration1);
+		$totalyeardurationhours = $hours." Hours";
+		$totalyeardurationmins = $mins." Minutes";
+
+	}
+	   
+	//most played sim and that sims time		   	   
+	$mostplayedsim = 'None Played';
+	$mostplayedsimtime = 0;
+  	$query = $con->query("SELECT sum(SimDuration) tm, sim from playerdata pd, `ex1i_node__field_ride_sim_id` si, `ex1i_node__field_beta_mode` b where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid AND `DateTime` >= '2022-01-01 00:00:00' and `DateTime` < '2022-12-31 00:00:00' group by sim order by tm DESC LIMIT 1", array(':uuid' => $uid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$mostplayedsim = lookupSimNumber($item->sim);
+		//$mostplayedsimtime = $item->tm;
+		$hours = floor($item->tm/(60*60));
+		$mins = date("i",$item->tm);
+		$secs = date("s",$item->tm);
+		$mostplayedsimtime = $hours." hours ".$mins." mins ".$secs." seconds";
+	}
+	
+	
+	//Total Challenges Completed For 2021
+ 	$completedchallenges=0;
+ 	
+ 	$query = $con->query(' select sid.field_ride_sim_id_value sim, v1.field_challenge_sql_value_1_value val1, v2.field_challenge_sql_value_2_target_id val2, v3.field_challenge_sql_value_3_value val3, v4.field_challenge_sql_value_4_target_id val4, v5.field_challenge_sql_value_5_target_id val5 '.
+		' FROM '.
+	 	' `ex1i_node__field_challenge_sql_value_1` v1, '.
+	 	' `ex1i_node__field_challenge_sql_value_2` v2, '.
+	 	' `ex1i_node__field_challenge_sql_value_3` v3, '.
+	 	' `ex1i_node__field_challenge_sql_value_4` v4, '.
+	 	' `ex1i_node__field_challenge_sql_value_5` v5, '.
+	 	' `ex1i_node__field_based_upon_simulator` s, '.
+	 	' `ex1i_node__field_ride_sim_id` sid, '.
+ 		' `ex1i_node__field_beta_mode` b '. 
+ 		' WHERE '.
+ 		' v1.entity_id = v2.entity_id '.
+ 		' AND v1.entity_id = v3.entity_id '.
+ 		' AND v1.entity_id = v4.entity_id '.
+ 		' AND v1.entity_id = v5.entity_id '.
+ 		' AND v1.entity_id = s.entity_id '.
+ 		' AND b.entity_id = s.field_based_upon_simulator_target_id '.
+ 		' AND b.entity_id = sid.entity_id '.
+ 		' AND b.field_beta_mode_value=0 ' 
+ 		); 	
+ 	$data = $query->fetchAll();
+ 	$allmedals=0;
+ 	foreach($data as $item) {
+		$v1=$item->val1;
+		$v2=$item->val2;
+		$v3=$item->val3;
+		$v4=$item->val4;
+		$v5=$item->val5;
+		$sim = $item->sim;
+		$parts=array($v1,$v2,$v3,$v4,"","",$v5);
+		$allmedals++;
+		
+		//temp fix
+		$uuid = $uid;
+		
+		if (checkChallengeCompletedForYear($con,$uuid,$sim,$parts))$completedchallenges++;
+ 	}
+	
+	
+	//count number of game plays for year  	   
+	$submitcounts1 = '0';
+  	$query = $con->query("SELECT COUNT(`score`) AS TotalSubmits FROM `playerdata` WHERE `username` = :uuid AND `DateTime` >= '2022-01-01 00:00:00' and `DateTime` < '2022-12-31 00:00:00'", array(':uuid' => $uid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$submitcounts1 = $item->TotalSubmits;
+	}	
+
+	
+	
+	//CSS 
+	$output.="<style>
+	
+.RidesimsWrapped {
+width: 90% !important;
+margin-left: 5% !important;
+margin-right: 1% !important;
+position: relative;
+background: #BFE0F1;
+}
+	
+MainBlockHeading {
+    background-color: #35AAB6;
+    padding-left: 2%;
+    margin: 0;
+        margin-bottom: 0px;
+    text-align: center;
+    width: 100%;
+    height: 50px;
+    font-size: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-family: Arial;
+    text-shadow: 0px 0px 5px black;
+    margin-bottom: 0px;
+}
+
+.DownloadPhoto {
+    text-align: center;
+    padding-top: 10px;
+    font-size: 16px;
+}
+
+.fa.fa-download {
+    font-size: 30px;
+}
+
+#wrapped2022 {
+    width: 100%;
+}
+	
+	</style>";
+	
+    if ($uid != 0) {
+	
+	$output.= "<div class='RidesimsWrapped'>";
+	
+	$output.= "<MainBlockHeading>Ride Sims Wrapped 2022</MainBlockHeading>";	  
+	
+	//Username for transfer
+	$printusername = lookupUserNumber($uid);
+	
+	$imgpathtoshow = create2022RideSimsWrappedImage($totalyearpeople,$totalyeardurationhours,$totalyeardurationmins, $mostplayedsim, $completedchallenges, $submitcounts1, $printusername);
+
+	$output .= "<img id='wrapped2022' src='"."/Wrapped2022/".$imgpathtoshow."'>";
+	
+	$imgpathdownload = "/Wrapped2022/".$imgpathtoshow;
+		
+	$output.= "<div class='DownloadPhoto'>";	
+	$output .= "Download Photo To Share:<br>";
+	$output.="<a class='downloadButton' href=".$imgpathdownload."><i class='fa fa-download'></i></a>";	
+	$output .=  "</div>";  
+		
+	//End Of Div
+	$output .=  "</div>";    
+
+
+}
+
+	$variables['output'] = $output;
+
+}
+
+	//Adsense Code 
+	if ($view->storage->id() == 'adverts_display_2020' && $view->current_display == 'block_1' && $field->field == 'title') {
+  	
+	$output="";
+
+ 	if(rand(0,100) < 30) {
+
+ 	//Burton Adsense Code
+ 	
+	$output.="<script async src='https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js' crossorigin='anonymous'> </script>
+<!-- Ride Sims Ads -->
+<ins class='adsbygoogle'
+     style='display:inline-block;width:728px;height:90px'
+     data-ad-client='ca-pub-9568205741208082'
+     data-ad-slot='7744892061'></ins>
+<script>
+     (adsbygoogle = window.adsbygoogle || []).push({});
+</script>";
+ 
+	}else{
+ 	
+ 	//James Adsense Code
+
+	$output.="<script async src='https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js' crossorigin='anonymous'> </script>
+<!-- Ride Sims Ads -->
+<ins class='adsbygoogle'
+     style='display:inline-block;width:728px;height:90px'
+     data-ad-client='ca-pub-9120846344829508'
+     data-ad-slot='6723480391'></ins>
+<script>
+     (adsbygoogle = window.adsbygoogle || []).push({});
+</script>";
+
+	}
+
+
+    $variables['output'] = $output;
+    
+	}
+
+	//Staff Staff Beta Sims Display - Updated 1st December 2020
+	if ($view->storage->id() == 'new_ride_simulators' && $view->current_display == 'block_2' && $field->field == 'field_ride_sim') {
+	$newspagedata = $variables['output'];
+	$output="";
+	
+	//Explode Stuff	
+	$explodeddata = explode('|^',$newspagedata);	
+
+	//CSS Code
+	$output.= "<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css'>";
+	
+	$output.="<style>
+	
+	.RideSimsList .views-field.views-field-field-ride-sim{
+		all:unset; 
+	}
+	
+	.SimulatorInformationDisplay {
+    	display: flex;
+    	flex-flow: column;
+	}
+	
+	.RideSimsList img {
+   		width: 100% !important;
+	}
+
+	.RideSimsList simtitle {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 20px;
+    	text-shadow: 0px 0px 10px black;
+    	align-items: center !important;
+	}
+	
+	.RideSimsList siminfo {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 15px;
+    	text-shadow: 0px 0px 01px black;
+    	align-items: center !important;
+	}	
+	
+	
+	.SimDetails {
+		position:absolute;
+		top: 50%;
+		width: 100%;
+	  -ms-transform: translateY(-50%);
+  transform: translateY(-50%);
+	}
+	
+	a.simlink {
+    	position: relative;
+	}
+
+
+	/* Mobile CSS Changes Code */
+	@media only screen and (max-width: 400px) {
+
+		siminfo {
+    		display: none !important;
+		}
+		
+		simtitle {
+    		font-size: 16px !important;
+		}
+
+	}
+
+	</style>";
+
+	//Display All Parts of Array 
+ 	//$output = print_r($explodeddata,true);
+ 		
+//  	Array ( [0] => BigFM-Expedition-GeForce 
+//  	[1] => BigFM Expedition GeForce 
+//  	[2] => Difficulty: Easy 
+//  	[3] => Holiday Park 
+//  	[4] => /Sites/Default/Files/2020-04/ExpeditionIcon_1.Jpg 
+//		[5] => Offical Sim Info )
+ 	
+//https://codepen.io/ShaeSco/pen/woeyOO
+
+ 	//Content Div
+	$output .= "<div class='SimulatorInformationDisplay'>";
+
+	//Hyper Link
+	$output .= "<a href='"."/ride-simulators/staff-beta/".akv($explodeddata,0)."'class='simlink'>";
+	$output .= "<img src='" .akv($explodeddata,4)."' alt='".akv($explodeddata,1)."'>";
+ 	$output .= "<div class='SimDetails'>";
+	$output .= "<simtitle>".akv($explodeddata,1)."</simtitle>";
+	$output .= "<br>";
+	
+	$officallabel= "";
+	$officallabel = (trim(akv($explodeddata,5)));
+	
+	if ($officallabel == "no"){
+		//$output .= "<siminfo> not offical</siminfo>";
+		$output .= "<siminfo>".akv($explodeddata,2)."</siminfo>";
+	}else{
+		//$output .= "<siminfo> offical</siminfo>";
+		$output .= "<siminfo>"."<i class='fa fa-check-square-o'></i>".akv($explodeddata,3)." - ".akv($explodeddata,2)."</siminfo>";
+	}
+	
+	$output .= "</div>";  
+
+	//End Of Hyper Link
+    $output .= "</a>";
+     
+	//End Content Div
+	$output .= "</div>";     
+		     
+    $variables['output'] = $output;
+        	
+	}	
+
+	//Public Sims Display
+	if ($view->storage->id() == 'new_ride_simulators' && $view->current_display == 'block_3' && $field->field == 'field_ride_sim') {
+	$newspagedata = $variables['output'];
+	$output="";
+	
+	//Explode Stuff	
+	$explodeddata = explode('|^',$newspagedata);	
+	
+	//CSS Code
+	$output.= "<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css'>";
+
+	$output.="<style>
+
+	.RideSimsList .views-field.views-field-field-ride-sim{
+		all:unset; 
+	}
+	
+	.SimulatorInformationDisplay {
+    	display: flex;
+    	flex-flow: column;
+	}
+	
+	.RideSimsList img {
+   		width: 100% !important;
+	}
+
+	.RideSimsList simtitle {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 20px;
+    	text-shadow: 0px 0px 10px black;
+    	align-items: center !important;
+	}
+	
+	.RideSimsList siminfo {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 15px;
+    	text-shadow: 0px 0px 01px black;
+    	align-items: center !important;
+	}	
+	
+	
+	.SimDetails {
+		position:absolute;
+		top: 50%;
+		width: 100%;
+	  -ms-transform: translateY(-50%);
+  transform: translateY(-50%);
+	}
+	
+	a.simlink {
+    	position: relative;
+	}
+
+
+	/* Mobile CSS Changes Code */
+	@media only screen and (max-width: 400px) {
+
+		siminfo {
+    		display: none !important;
+		}
+		
+		simtitle {
+    		font-size: 16px !important;
+		}
+
+	}
+
+
+
+
+	</style>";
+
+	//Display All Parts of Array 
+ 	//$output = print_r($explodeddata,true);
+ 		
+//  	Array ( [0] => BigFM-Expedition-GeForce 
+//  	[1] => BigFM Expedition GeForce 
+//  	[2] => Difficulty: Easy 
+//  	[3] => Holiday Park 
+//  	[4] => /Sites/Default/Files/2020-04/ExpeditionIcon_1.Jpg 
+//  	[5] => /RideSimsBranding/Officiallong_shadow.Jpg )
+ 	
+//https://codepen.io/ShaeSco/pen/woeyOO
+
+ 	//Content Div
+	$output .= "<div class='SimulatorInformationDisplay'>";
+
+	//Hyper Link
+	$output .= "<a href='"."/ride-simulators/".akv($explodeddata,0)."'class='simlink'>";
+	$output .= "<img src='" .akv($explodeddata,4)."' alt='".akv($explodeddata,1)."'>";
+ 	$output .= "<div class='SimDetails'>";
+	$output .= "<simtitle>".akv($explodeddata,1)."</simtitle>";
+	$output .= "<br>";
+	
+	$officallabel= "";
+	$officallabel = (trim(akv($explodeddata,5)));
+	
+	if ($officallabel == "no"){
+		//$output .= "<siminfo> not offical</siminfo>";
+		$output .= "<siminfo>".akv($explodeddata,2)."</siminfo>";
+	}else{
+		//$output .= "<siminfo> offical</siminfo>";
+		$output .= "<siminfo>"."<i class='fa fa-check-square-o'></i>".akv($explodeddata,3)." - ".akv($explodeddata,2)."</siminfo>";
+	}	$output .= "</div>";  
+
+	//End Of Hyper Link
+    $output .= "</a>";
+     
+	//End Content Div
+	$output .= "</div>";     
+		     
+    $variables['output'] = $output;
+        	
+	}	
+
+	//Patreon Beta Sims Display
+	if ($view->storage->id() == 'new_ride_simulators' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim') {
+	
+	//get ID 	
+	$uid = \Drupal::currentUser()->id();
+   	$user = \Drupal\user\Entity\User::load($uid);
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+	
+	//if no one is logged in
+// 	if ($uid==0) {
+	
+	$newspagedata = $variables['output'];
+	$output="";
+	
+	//Explode Stuff	
+	$explodeddata = explode('|^',$newspagedata);	
+	
+	//CSS Code
+	$output.= "<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css'>";
+
+	$output.="<style>
+
+	.RideSimsList .views-field.views-field-field-ride-sim{
+		all:unset; 
+	}
+	
+	.SimulatorInformationDisplay {
+    	display: flex;
+    	flex-flow: column;
+	}
+	
+	.RideSimsList img {
+   		width: 100% !important;
+	}
+
+	.RideSimsList simtitle {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 20px;
+    	text-shadow: 0px 0px 10px black;
+    	align-items: center !important;
+	}
+	
+	.RideSimsList siminfo {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 15px;
+    	text-shadow: 0px 0px 01px black;
+    	align-items: center !important;
+	}	
+	
+	
+	.SimDetails {
+		position:absolute;
+		top: 50%;
+		width: 100%;
+	  -ms-transform: translateY(-50%);
+  transform: translateY(-50%);
+	}
+	
+	a.simlink {
+    	position: relative;
+	}
+
+
+	/* Mobile CSS Changes Code */
+	@media only screen and (max-width: 400px) {
+
+		siminfo {
+    		display: none !important;
+		}
+		
+		simtitle {
+    		font-size: 16px !important;
+		}
+
+	}
+
+
+
+
+	</style>";
+
+	//Display All Parts of Array 
+ 	//$output = print_r($explodeddata,true);
+ 		
+//  	Array ( [0] => BigFM-Expedition-GeForce 
+//  	[1] => BigFM Expedition GeForce 
+//  	[2] => Difficulty: Easy 
+//  	[3] => Holiday Park 
+//  	[4] => /Sites/Default/Files/2020-04/ExpeditionIcon_1.Jpg 
+//  	[5] => /RideSimsBranding/Officiallong_shadow.Jpg )
+ 	
+//https://codepen.io/ShaeSco/pen/woeyOO
+
+ 	//Content Div
+	$output .= "<div class='SimulatorInformationDisplay'>";
+
+	//Hyper Link
+	$output .= "<a href='"."/ride-simulators/beta/".akv($explodeddata,0)."'class='simlink'>";
+	$output .= "<img src='" .akv($explodeddata,4)."' alt='".akv($explodeddata,1)."'>";
+ 	$output .= "<div class='SimDetails'>";
+	$output .= "<simtitle>".akv($explodeddata,1)."</simtitle>";
+	$output .= "<br>";
+	
+	$officallabel= "";
+	$officallabel = (trim(akv($explodeddata,5)));
+	
+	if ($officallabel == "no"){
+		//$output .= "<siminfo> not offical</siminfo>";
+		$output .= "<siminfo>".akv($explodeddata,2)."</siminfo>";
+	}else{
+		//$output .= "<siminfo> offical</siminfo>";
+		$output .= "<siminfo>"."<i class='fa fa-check-square-o'></i>".akv($explodeddata,3)." - ".akv($explodeddata,2)."</siminfo>";
+	}	$output .= "</div>";  
+
+	//End Of Hyper Link
+    $output .= "</a>";
+     
+	//End Content Div
+	$output .= "</div>";     
+		     
+		     
+	
+// 	}else{	 
+// 	
+// 	$output = $uid;
+// 
+// }    
+
+	//output the content  
+	   
+    $variables['output'] = $output;
+        	
+	}
+
+	//Patreon Preview Pane
+	if ($view->storage->id() == 'new_ride_simulators' && $view->current_display == 'block_5' && $field->field == 'field_ride_sim') {
+		
+	$newspagedata = $variables['output'];
+	$output="";
+	
+	//Explode Stuff	
+	$explodeddata = explode('|^',$newspagedata);	
+	
+	//CSS Code
+	$output.= "<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css'>";
+
+	$output.="<style>
+
+	.RideSimsList .views-field.views-field-field-ride-sim{
+		all:unset; 
+	}
+	
+	.SimulatorInformationDisplay {
+    	display: flex;
+    	flex-flow: column;
+	}
+	
+	.RideSimsList img {
+   		width: 100% !important;
+	}
+
+	.RideSimsList simtitle {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 20px;
+    	text-shadow: 0px 0px 10px black;
+    	align-items: center !important;
+	}
+	
+	.RideSimsList siminfo {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 15px;
+    	text-shadow: 0px 0px 01px black;
+    	align-items: center !important;
+	}	
+	
+	
+	.SimDetails {
+		position:absolute;
+		top: 50%;
+		width: 100%;
+	  -ms-transform: translateY(-50%);
+  transform: translateY(-50%);
+	}
+	
+	a.simlink {
+    	position: relative;
+	}
+
+
+	/* Mobile CSS Changes Code */
+	@media only screen and (max-width: 400px) {
+
+		siminfo {
+    		display: none !important;
+		}
+		
+		simtitle {
+    		font-size: 16px !important;
+		}
+
+	}
+
+
+
+
+	</style>";
+
+	//Display All Parts of Array 
+ 	//$output = print_r($explodeddata,true);
+ 		
+//  	Array ( [0] => BigFM-Expedition-GeForce 
+//  	[1] => BigFM Expedition GeForce 
+//  	[2] => Difficulty: Easy 
+//  	[3] => Holiday Park 
+//  	[4] => /Sites/Default/Files/2020-04/ExpeditionIcon_1.Jpg 
+//  	[5] => /RideSimsBranding/Officiallong_shadow.Jpg )
+ 	
+//https://codepen.io/ShaeSco/pen/woeyOO
+
+
+
+
+
+
+ 	//Content Div
+	$output .= "<div class='SimulatorInformationDisplay'>";
+
+	//Hyper Link
+	$output .= "<a href='https://www.patreon.com/RideSims'class='simlink'>";
+	$output .= "<img src='" .akv($explodeddata,4)."' alt='".akv($explodeddata,1)."'>";
+ 	$output .= "<div class='SimDetails'>";
+	$output .= "<simtitle>".akv($explodeddata,1)."</simtitle>";
+	$output .= "<br>";
+	
+	$officallabel= "";
+	$officallabel = (trim(akv($explodeddata,5)));
+	
+	if ($officallabel == "no"){
+		//$output .= "<siminfo> not offical</siminfo>";
+		$output .= "<siminfo>".akv($explodeddata,2)."</siminfo>";
+	}else{
+		//$output .= "<siminfo> offical</siminfo>";
+		$output .= "<siminfo>"."<i class='fa fa-check-square-o'></i>".akv($explodeddata,3)." - ".akv($explodeddata,2)."</siminfo>";
+	}	$output .= "</div>";  
+	
+
+	//End Of Hyper Link
+    $output .= "</a>";
+     
+	//End Content Div
+	$output .= "</div>";     
+		     
+    $variables['output'] = $output;
+    }
+    	
+	//Ruffle Enable and Disable Option
+	if ($view->storage->id() == 'rufflecodebanner' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim') {
+	$output="";
+	
+	//CSS Code
+	$output.="<style>
+	
+.RuffleBanner {
+    background: #BFE0F1;
+    text-align: center;
+    padding-top: 10px;
+    padding-bottom: 20px;
+}
+	
+
+.ruffleOnButton {
+    color: black;
+    margin: 5px;
+    background-color: #86E61F;
+    text-align: center !important;
+	font-size: 15px;
+	padding: 12px 12px !important;
+	font-family: 'Raleway','Helvetica Neue',Helvetica,Arial,sans-serif;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 3.5px solid #86E61F;
+}
+
+
+.ruffleOffButton {
+    color: white;
+    margin: 5px;
+    background-color: #E12C71;
+    text-align: center !important;
+	font-size: 15px;
+	padding: 12px 12px !important;
+	font-family: 'Raleway','Helvetica Neue',Helvetica,Arial,sans-serif;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 3.5px solid #E12C71;
+}
+
+.ruffleOffButton:hover {
+    border: 3.5px solid white;
+    color: white;
+
+}
+
+.ruffleOnButton:hover {
+    border: 3.5px solid white;
+    color: black;
+}
+
+.RuffleBanner p {
+    color: black;
+    margin: 5px;
+    text-align: center !important;
+	font-size: 15px;
+	font-family: 'Raleway','Helvetica Neue',Helvetica,Arial,sans-serif;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+	</style>
+	
+	";
+	
+	//get ID 	
+	$uid = \Drupal::currentUser()->id();
+   	$user = \Drupal\user\Entity\User::load($uid);
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+	//$output="";
+	
+	//if no one is logged in
+	if ($uid != 0) {
+	
+// 	if(array_key_exists('action',$_GET)) {
+// 		if ($_GET['action']=='ruffleOn'){
+// 			setUserSettings($con, $uid, 'useRuffle', 'On');
+// 		} else if ($_GET['action']=='ruffleOff') {
+// 			setUserSettings($con, $uid, 'useRuffle', 'Off');
+// 		} 
+// 	}
+
+	$output .= "<div class='RuffleBanner'>";
+// 	$settings = getUserSettings($con, $uid);
+
+// 	if (akv($settings,'useRuffle')!='Off'){
+		$output .= "<p> </p>";
+		
+		$output .= "<script>";
+		$output .= "window.RufflePlayer = window.RufflePlayer || {};";
+		$output .= "window.RufflePlayer.config = {";
+		$output .= "    'publicPath': '/ruffle',";
+		$output .= "    'polyfills': true,";
+		$output .= "    'autoplay': 'on',";	
+		$output .= "    'unmuteOverlay': 'hidden',";
+		$output .= "    'contextMenu': 'off',";	
+		$output .= "    'showSwfDownload': false,";	
+		$output .= "    'preloader': false,";			
+		$output .= "    'quality': 'low',";	
+		$output .= "    'splashScreen': false,";	
+		$output .= "}";
+		$output .= "</script><script src='https://ridesims.com/ruffle/ruffle.js?a=".date('Y-m-d')."'></script>";
+		
+// 		$output.="<a href='?action=ruffleOff' class='ruffleOffButton'>Revert To Flash</a> ";
+		
+		
+		//Full Screen Button 
+		//$output .= "<br><br>";
+		$output .= "<a href='#' class='ruffleOnButton' onclick=\"document.getElementById('ridmesimsfile').enterFullscreen(); return false;\"> Play Full Screen </a>";
+
+		//Hide Flash must be run on computer message 
+		
+		$output.="<style>
+	
+		div#swf-not-available {
+    		display: none !important;
+		}
+
+		</style>
+		
+		";
+
+//  	} else {
+//  		$output .= "<p>HTML5 Mode OFF - Using Flash</p>";
+// 		$output.="<a href='?action=ruffleOn' class='ruffleOnButton'>Activate HTML5 Mode</a>";
+//     }
+
+	}else{	
+		
+		//Unknown user
+		
+		//$output .= "<p>HTML5 Code - Unknown Player</p>";
+		
+		$output .= "<script>";
+		$output .= "window.RufflePlayer = window.RufflePlayer || {};";
+		$output .= "window.RufflePlayer.config = {";
+		$output .= "    'publicPath': '/ruffle',";
+		$output .= "    'polyfills': true,";
+		$output .= "    'autoplay': 'on',";	
+		$output .= "    'unmuteOverlay': 'hidden',";
+		$output .= "    'contextMenu': 'off',";	
+		$output .= "    'showSwfDownload': false,";	
+		$output .= "    'preloader': false,";			
+		$output .= "    'quality': 'low',";	
+		$output .= "    'splashScreen': false,";	
+		$output .= "}";
+		$output .= "</script><script src='https://ridesims.com/ruffle/ruffle.js?a=".date('Y-m-d')."'></script>";
+		
+		//Hide Flash must be run on computer message 
+		
+		$output.="<style>
+	
+		div#swf-not-available {
+    		display: none !important;
+		}
+
+		</style>
+		
+		";
+		
+		}
+		
+	$output .= "</div>";
+					     
+    $variables['output'] = $output;
+        	
+	}
+
+	//Ride Sim Player View - Top Tips Data Change 
+	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_3' && $field->field == 'field_sim_top_tips') {
+	$simstoptips = $variables['output'];
+	$output="";
+	
+	//Explode Stuff	
+	$explodeddata = explode('|^',$simstoptips);	
+	
+	$output.="<style>
+	
+	touchscreenwarning p {
+    	background: #E12C71;
+    	padding-top: 5px;
+    	padding-bottom: 5px;
+	}
+	
+		touchscreenready p {
+    	background: #86E61F;
+    	padding-top: 5px;
+    	padding-bottom: 5px;
+	}
+
+	</style>";
+
+
+ 	//Content Div
+	$output .= "<div class='OpTopTips'>";
+
+	$officallabel= "";
+	$officallabel = (trim(akv($explodeddata,0)));
+	
+	//output array
+	//$output .= print_r($explodeddata, true)." ----- ";
+	
+	if ($officallabel == "No"){
+			
+		$output .= "<touchscreenwarning><p>"."This simulator currently isn't touch screen compatible and needs to be played with a keyboard."."</p></touchscreenwarning>";
+		
+		$output .= "<siminfo>".akv($explodeddata,1)."</siminfo>";
+			
+	}else{
+	
+		
+		$output .= "<touchscreenready><p>"."Touch Screen Ready"."</p></touchscreenready>";
+
+		$output .= "<siminfo>".akv($explodeddata,1)."</siminfo>";
+	
+	}
+	
+
+ 	$output .= "</div>";
+		     
+    $variables['output'] = $output;
+        	
+	}	
+
+	//Ride Sim Player View - Top Tips Data Change 
+	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_2' && $field->field == 'field_sim_top_tips') {
+	$simstoptips = $variables['output'];
+	$output="";
+	
+	//Explode Stuff	
+	$explodeddata = explode('|^',$simstoptips);	
+	
+	$output.="<style>
+	
+	touchscreenwarning p {
+    	background: #E12C71;
+    	padding-top: 5px;
+    	padding-bottom: 5px;
+	}
+	
+		touchscreenready p {
+    	background: #86E61F;
+    	padding-top: 5px;
+    	padding-bottom: 5px;
+	}
+
+	</style>";
+
+
+ 	//Content Div
+	$output .= "<div class='OpTopTips'>";
+
+	$officallabel= "";
+	$officallabel = (trim(akv($explodeddata,0)));
+	
+	//output array
+	//$output .= print_r($explodeddata, true)." ----- ";
+	
+	if ($officallabel == "No"){
+			
+		$output .= "<touchscreenwarning><p>"."This simulator currently isn't touch screen compatible and needs to be played with a keyboard."."</p></touchscreenwarning>";
+		
+		$output .= "<siminfo>".akv($explodeddata,1)."</siminfo>";
+			
+	}else{
+	
+		
+		$output .= "<touchscreenready><p>"."Touch Screen Ready"."</p></touchscreenready>";
+
+		$output .= "<siminfo>".akv($explodeddata,1)."</siminfo>";
+	
+	}
+	
+
+ 	$output .= "</div>";
+		     
+    $variables['output'] = $output;
+        	
+	}	
+
+	//Ride Sim Player View - Top Tips Data Change 
+	if ($view->storage->id() == 'ride_sim_player_view' && $view->current_display == 'page_1' && $field->field == 'field_sim_top_tips') {
+	$simstoptips = $variables['output'];
+	$output="";
+	
+	//Explode Stuff	
+	$explodeddata = explode('|^',$simstoptips);	
+	
+	$output.="<style>
+	
+	touchscreenwarning p {
+    	background: #E12C71;
+    	padding-top: 5px;
+    	padding-bottom: 5px;
+	}
+	
+		touchscreenready p {
+    	background: #86E61F;
+    	padding-top: 5px;
+    	padding-bottom: 5px;
+	}
+
+	</style>";
+
+
+ 	//Content Div
+	$output .= "<div class='OpTopTips'>";
+
+	$officallabel= "";
+	$officallabel = (trim(akv($explodeddata,0)));
+	
+	//output array
+	//$output .= print_r($explodeddata, true)." ----- ";
+	
+	if ($officallabel == "No"){
+			
+		$output .= "<touchscreenwarning><p>"."This simulator currently isn't touch screen compatible and needs to be played with a keyboard."."</p></touchscreenwarning>";
+		
+		$output .= "<siminfo>".akv($explodeddata,1)."</siminfo>";
+			
+	}else{
+	
+		
+		$output .= "<touchscreenready><p>"."Touch Screen Ready"."</p></touchscreenready>";
+
+		$output .= "<siminfo>".akv($explodeddata,1)."</siminfo>";
+	
+	}
+	
+
+ 	$output .= "</div>";
+		     
+    $variables['output'] = $output;
+        	
+	}	
+
+	//2022 Challenge System
+	if ($view->storage->id() == 'challenge_2022' && $view->current_display == 'page_1' && $field->field == 'name') {
+	$outputbefore = $variables['output'];
+	//Nuke Output
+	$output="";
+	
+	//CSS For Challenge System
+	$output.="<style>
+	
+	.ChallengeSystemMain {
+   		display: flex;
+    	width: 90% !important;
+    	margin-left: 5% !important;
+    	margin-right: 5% !important;
+    	flex-wrap: wrap !important;
+	}
+	
+	.ChallengeSystem {
+    	text-align: center;
+	}
+	
+	.ChallengeSystem #profilephoto{
+    	height: 200px;
+    	width: 200px;
+    	border-radius: 50%; 	
+	}
+	
+	
+	.ChallengeSystem .fa.fa-trophy {
+		font-size: 30px;
+	}
+	
+.BannerMedal {
+    position: absolute;
+    top: 40px;
+    width: 200px;
+}
+
+#profilephoto {
+    position: absolute;
+    top: 30px;
+    left: 30px;
+}
+
+
+.ChallengeButtonYes {
+font-family: helvetica, sans-serif;
+text-transform: uppercase;
+color: white;
+text-align: center;
+background: #86E61F;
+font-weight: bold;
+border-color: #86E61F;
+border-style: solid;
+width: 50% !important;
+}
+
+.ChallengeButtonNo {
+font-family: helvetica, sans-serif;
+text-transform: uppercase;
+color: white;
+text-align: center;
+font-weight: bold;
+border-style: solid;
+width: 50% !important;
+background: #CC0E55;
+border-color: #CC0E55;
+}
+
+.ActiveChallengesTable {
+    width: 90%;
+    margin-left: 5% !important;
+    margin-right: 5% !important;
+}
+
+
+MainBlockHeading{
+	background-color: #86E61F;
+	padding-left: 2%;
+	margin: 0;
+	text-align: center;
+	width: 100%;
+	height: 50px;
+	font-size: 20px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	color: #fff;
+	font-family: Arial;
+	text-shadow: 0px 0px 5px black;
+	margin-bottom: 0px;
+}
+
+
+MainBlockHeading1{
+background-color: #E12C71 !important;
+	padding-left: 2%;
+	margin: 0;
+	text-align: center;
+	width: 100%;
+	height: 50px;
+	font-size: 20px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	color: #fff;
+	font-family: Arial;
+	text-shadow: 0px 0px 5px black;
+	margin-bottom: 0px;
+}
+
+MainBlockHeading2{
+background-color: #E12C71 !important;
+	padding-left: 2%;
+	margin: 0;
+	text-align: center;
+	width: 100%;
+	height: 50px;
+	font-size: 20px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	color: #fff;
+	font-family: Arial;
+	text-shadow: 0px 0px 5px black;
+	margin-bottom: 0px;
+}
+
+MainBlockHeading3{
+background-color: #E47932 !important;
+	padding-left: 2%;
+	margin: 0;
+	text-align: center;
+	width: 100%;
+	height: 50px;
+	font-size: 20px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	color: #fff;
+	font-family: Arial;
+	text-shadow: 0px 0px 5px black;
+	margin-bottom: 0px;
+}
+
+MainBlockHeading4{
+background-color: #EBBA32 !important;
+	padding-left: 2%;
+	margin: 0;
+	text-align: center;
+	width: 100%;
+	height: 50px;
+	font-size: 20px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	color: #fff;
+	font-family: Arial;
+	text-shadow: 0px 0px 5px black;
+	margin-bottom: 0px;
+}
+
+MainBlockHeading5{
+background-color: #35AAB6 !important;
+	padding-left: 2%;
+	margin: 0;
+	text-align: center;
+	width: 100%;
+	height: 50px;
+	font-size: 20px;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	color: #fff;
+	font-family: Arial;
+	text-shadow: 0px 0px 5px black;
+	margin-bottom: 0px;
+}
+
+.ChallengeSystemBanner {
+    width: 90% !important;
+    margin-left: 5% !important;
+    margin-right: 5% !important;
+}
+
+
+.Challenge {
+    width: 20% !important;
+    background: #BFE0F1;
+    margin-top: 10px;
+}
+
+.Challenge2 {
+    width: 60% !important;
+    background: #BFE0F1;
+    margin-top: 10px;
+}
+
+.Challenge3 {
+    width: calc(70% - 20px)!important;
+    background: #BFE0F1;
+    margin-top: 20px;
+    margin-right: 20px;
+}
+
+.Challenge4 {
+    width: calc(30% - 0px)!important;
+    background: #BFE0F1;
+    margin-top: 20px;
+}
+
+.Challenge5 {
+    width: calc(30% - 0px)!important;
+    margin-top: 20px;
+}
+
+
+.ChallengeSubmit {
+  height: 60px;
+  background: #BFE0F1;
+  text-align: left;
+}
+
+.ChallengeSystem {
+margin-bottom: 20px;
+}
+
+
+#challengephoto {
+height: 200px;
+width: 89%;
+object-fit: cover;
+margin-left: 0;
+margin-right: 0;
+}
+
+#challengephoto2 {
+height: 200px;
+width: 89%;
+object-fit: fit;
+margin-left: 0;
+margin-right: 0;
+}
+
+.placeholder {
+display: flex;
+justify-content: center;
+width: 100% !important;
+margin-left: 0;
+margin-right: 0;
+text-align: center;
+}
+
+.friendphoto {
+	display: none;
+}
+
+
+.ChallengeButton {
+width: 100% !important;
+display: flex;
+border-style: solid;
+border-width: 2px;
+}
+
+
+#DeleteChallengeIcon {
+font-size: 20px;
+}
+
+#challengesubmitbutton {
+  width: 150%;
+  text-align: center;
+  background: #86E61F !important;
+}
+
+#ChallengeDrop {
+width: 90% !important;
+margin-left: 0;
+margin-right: 0;
+text-align: center;
+height: 35px;
+background: white;
+overflow: hidden;
+border: 0;
+color: black;
+-moz-appearance: none;
+-webkit-appearance: none;
+appearance: none;
+cursor: pointer;
+}
+
+#ChallengeDrop2 {
+width: calc(100% - 10px)!important;
+margin-left: 5px;
+margin-right: 5px;
+text-align: center;
+height: 35px;
+background: white;
+overflow: hidden;
+border: 0;
+color: black;
+-moz-appearance: none;
+-webkit-appearance: none;
+appearance: none;
+cursor: pointer; 
+
+
+}
+
+
+
+#ChallengeDropTime{
+width: 100% !important;
+margin-left: 0;
+margin-right: 0;
+text-align: center;
+height: 35px;
+background: white;
+overflow: hidden;
+border: 0;
+color: black;
+-moz-appearance: none;
+-webkit-appearance: none;
+appearance: none;
+cursor: pointer; 
+}
+
+#ChallengeDrop3 {
+width: 100% !important;
+margin-left: 0;
+margin-right: 0;
+text-align: center;
+height: 35px;
+background: white;
+overflow: hidden;
+border: 0;
+color: black;
+-moz-appearance: none;
+-webkit-appearance: none;
+appearance: none;
+cursor: pointer; 
+margin-bottom: 10px;
+}
+
+#ChallengeDrop4 {
+width: 90% !important;
+margin-left: 0;
+margin-right: 0;
+text-align: center;
+height: 35px;
+background: white;
+overflow: hidden;
+border: 0;
+color: black;
+-moz-appearance: none;
+-webkit-appearance: none;
+appearance: none;
+cursor: pointer; 
+}
+
+.ChallengeFlex .SimsInfo1 {
+  width: 100%;
+}
+
+
+.ChallengeFlex {
+display: flex;
+flex-wrap: wrap;
+}
+
+#MedalsMain {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+#MedalsStack {
+  width: 10%;
+  border-style: solid;
+  border-width: 1px;
+  border-color: #d7f4fe;
+}
+
+ul.FriendsListMainNew {
+overflow: auto;
+white-space: nowrap !important;
+height: 150px;
+display: inline-block !important;
+width: 100%;
+margin-top: 10px !important;
+}
+
+
+.FriendsListNew {
+  vertical-align: top;
+  display: inline-block;
+}
+
+.friendsbox2 {
+  width: 170px !important;
+  padding-top: 25px;
+}
+
+#friendsboximage {
+  width: 100px;
+  height: 100px;
+}
+
+#UserSearchBox {
+  height: 45px;
+  overflow: hidden;
+  border: 0;
+  text-align: center;
+  color: black;
+  width: calc(95% - 45px) !important;
+  border-top-left-radius: 40px;
+  border-bottom-left-radius: 40px;
+  margin: 0;
+}
+
+#UserSearchForm {
+  display: flex;
+  justify-content: center;
+}	
+
+#UserSearchButton {
+  overflow: visible;
+  position: relative;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  height: 45px;
+  width: 45px;
+  font: bold 15px/40px 'lucida sans', 'trebuchet MS', 'Tahoma';
+  color: white;
+  text-transform: uppercase;
+  background: #183569;
+  border-radius: 0 3px 3px 0;
+  text-shadow: 0 -1px 0 rgba(0, 0 ,0, .3);
+  border-bottom-right-radius: 40px;
+  border-top-right-radius: 40px;
+}
+
+#SearchForFriendsDiv {
+  display: flex;
+  margin: 0;
+}
+
+.MainChallengeSection {
+  width: 90%;
+  margin-left: 5%;
+  margin-right: 5%;
+  margin-top: 20px;
+}
+
+.TimeSection {
+width: 50%;
+}
+
+.ValueSection {
+width: 50%;
+}
+
+
+/* Scroll Bar CSS */
+.FriendsListMainNew::-webkit-scrollbar {
+  	width: 5px;
+}
+.FriendsListMainNew::-webkit-scrollbar-track {
+	background: #a5d9ec; 
+}
+.FriendsListMainNew::-webkit-scrollbar-thumb {
+	background: #0e4f74; 
+}
+
+
+#ChallengeSwitch {
+width: 100%;
+padding-top: 8px;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+
+.switch input { 
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: '';
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(26px);
+  -ms-transform: translateX(26px);
+  transform: translateX(26px);
+}
+
+.slider.round {
+  border-radius: 34px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+/* Mobile CSS Changes Code */
+@media only screen and (max-width: 768px) {
+
+
+.Challenge3 {
+width: 100% !important;
+margin-right: 0 !important;
+}
+
+.Challenge4 {
+width: 100% !important;
+}
+
+.Challenge5 {
+width: 100% !important;
+}
+
+.Challenge {
+width: 50% !important;
+}
+
+.Challenge2 {
+width: 100% !important;
+}
+
+}
+
+
+
+
+
+	</style>";
+	
+	$output .= "<head>
+	<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css'>
+	</head>";
+
+	//if no one is logged in
+	$uid = \Drupal::currentUser()->id();
+	if ($uid != 0) {
+
+
+ 	//Content Div
+	$output .= "<div class='ChallengeSystem'>";
+	
+
+if(isset($_GET['action'])){
+
+	$urlpartsnew = $_GET['action'];
+ 	$http2  = explode('£$',$urlpartsnew);
+	$urlsection = "";
+	$numbersection = "";
+	$urlsection = $http2[0];
+	$numbersection = $http2[1];
+	
+}	
+	//do stuff from url
+	if(array_key_exists('action',$_GET)) {
+		$con = \Drupal\Core\Database\Database::getConnection('default');
+		if ($urlsection =='AcceptChallenge'){
+			AcceptUserChallenge($con, $numbersection,$uid);				
+		}
+		if ($urlsection=='DeclineChallenge') {
+			DeclineUserChallenge($con, $numbersection,$uid);
+		} 
+		if ($urlsection=='DeleteChallenge') {
+		
+			//Delete the challenge
+			DeleteUserChallenge($con, $numbersection,$uid);
+			
+			//Delete any data in the system 
+			DeleteChallengeData($con, $numbersection,$uid);
+			
+		} 
+	}
+	
+	
+	$accountusername = lookupUserNumber($uid);
+	$accountphoto = getUserImageForNumber($uid);
+	
+	$output .= "<div class='ChallengeBanner'>";
+	
+	$output .= "<img src='https://ridesims.com/challenge2022/RideSimsPlus_ChallengeBanner.png' class='BannerIMG'>";
+	$output .= "<img src='https://ridesims.com/challenge2022/RSBadge.png' class='BannerMedal'>";
+
+ 	$output.= "Welcome ";
+ 	$output.=  $accountusername;
+ 	$output.= " to your challenges! <br>";
+ 	
+ 	$output.= "<img id='profilephoto' src='".$accountphoto."'>";
+
+	$output.= "<a class='fa fa-trophy'></a>";
+	$output.= "<br>";
+	$output.= "You've won ".challenge2022HowManyWon($uid)." challenges";
+	$output.= "<br>";
+	$output.= "You've lost ".challenge2022HowManyLost($uid)." challenges";
+
+	$output .= "</div>";
+	
+	
+	
+	
+	//show last status message 
+	
+	
+	
+	$lastmessage = challengeSystemFindStatus($uid);
+	
+	if ($lastmessage == ""){
+	
+// 	$output.= "no message found";
+	
+	}else{
+	
+	$output.= "<div id='ChallengeStatusBar'>";
+	
+	$output.= "<b>Submit Status:</b><br>".$lastmessage;
+	
+	$output.= "</div>";
+	}
+
+	
+	
+	//Users Roles 
+	$usersroles = checkUsersRoles($uid);
+	
+	$rolesexploded = explode('$$', $usersroles);
+	
+	$SystemRoll = "";
+	
+	for ($i=0; $i<count($rolesexploded); $i++){
+		
+	$CurrentUsersRole = trim($rolesexploded[$i]);
+
+	switch ($CurrentUsersRole) {
+
+    		case "ride_sims_user_basic":
+        		$SystemRoll = "0";
+        	break;
+
+        	case "ride_sim_supporter_":
+        		if($SystemRoll <= "1"){
+        			$SystemRoll = "1";
+        		}
+        	break;
+    		
+    		case "_ride_sims_patron":
+        		if($SystemRoll <= "2"){
+        			$SystemRoll = "2";
+        		}
+        	break;
+        	
+        	case "vip_user":
+        		if($SystemRoll <= "3"){
+        			$SystemRoll = "3";
+        		}
+        	break;
+        	
+        	case "ride_sims_platinum_member":
+        		if($SystemRoll <= "4"){
+        			$SystemRoll = "4";
+        		}
+        	break;
+        	
+        	case "administrator":
+        		if($SystemRoll <= "4"){
+        			$SystemRoll = "4";
+        		}
+        	break;
+        	
+	}
+		
+	}
+	
+	
+	//Hide or Show if user has certain role
+	$SystemRolesButtonAvaibale = "";
+	if($SystemRoll <= "2"){
+    	
+    	//set string
+    	$SystemRolesButtonAvaibale = "disabled";
+    
+    }
+	
+	
+	
+	//$output.= "Users Game Role Is: ".$SystemRoll;
+
+	//Deal with system roles and disable / hide boxes 
+
+	
+	//Active Challenges Table
+	$output.= "<div class='ActiveChallengesTable'>";
+
+	$output.= "<MainBlockHeading1>Active Challenges</MainBlockHeading1>";
+	
+	
+	//Start of table 	
+	$output .= "<table id='ChallengesTable'>  
+	<tr>
+	<th>id</th>
+    <th>Challenger</th>
+    <th>Challenge Description</th> 
+    <th>Simulation</th>
+    <th>Challenge Date</th>
+    <th>Challenge Status</th>
+    <th>Delete</th>
+  	</tr>";
+
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$query = $con->query("SELECT * FROM `PlayerChallenges` WHERE `ChallengeAccepterUserId` =:frid AND `Hidden` = 'no' OR `ChallengeOwnerUserId` =:frid AND `Hidden` = 'no'", array(':frid'=>$uid));		
+
+	$ii = "";
+	$data = $query->fetchAll();
+		foreach($data as $item) {	
+		$ii ++;
+		//Start of table row	
+		$output .= "<tr>";
+	
+		$ChallengeID =($item->ChallengeID);
+		$ChallengeType =($item->ChallengeType);
+		$ChallengeValueToGet =($item->ChallengeValueToGet);
+		$ChallengeSimID =($item->ChallengeSimID);
+		$ChallengeStartDate =($item->ChallengeStartDate);
+		$ChallengeOwnerUserId =($item->ChallengeOwnerUserId);
+		$ChallengeAccepterUserId =($item->ChallengeAccepterUserId);
+		$ChallengeDuration1 =($item->ChallengeDuration);
+		$ChallengeAccepterPlayed =($item->ChallengeAccepterPlayed);
+		$ChallengeOwnerPlayed =($item->ChallengeOwnerPlayed);
+		$ChallengeStartDate =($item->ChallengeStartDate);
+		
+		//make url to  go play the sim
+		$simurl1 = lookupSimNumberFromNid($ChallengeSimID);
+		$simurl = str_replace(" ","-",$simurl1); 
+		
+		
+		//case statement to convert time
+		switch($ChallengeDuration1){
+			case "0":
+				$ChallengeDuration = "Fastest Time";
+			break;
+			case "300":
+				$ChallengeDuration = "5 Minutes";
+			break;
+			case "900":
+				$ChallengeDuration = "15 Minutes";
+			break;
+			case "1800":
+				$ChallengeDuration = "30 Minutes";
+			break;
+			case "3600":
+				$ChallengeDuration = "1 Hour";
+			break;
+			case "7200":
+				$ChallengeDuration = "2 Hours";
+			break;
+		}
+		
+		//setup challenge buttons 
+		$ChallengeButtons = "";
+		
+		//case statemoment for buttons 
+		$ChallengeStatus2 =($item->ChallengeStatus);
+		switch($ChallengeStatus2){
+			case "Pending":
+				
+				$ChallengeStatus = "Waiting For Friend To Accept";
+				
+				if($ChallengeAccepterUserId == $uid){
+					$ChallengeStatus = "<div class='ChallengeStatus'><b>Do you want to accept this?</b></div>";
+					$ChallengeButtons = "<div class='ChallengeButton'><a href='?action=AcceptChallenge"."£$".$ChallengeID."' class='ChallengeButtonYes'>Accept</a><a href='?action=DeclineChallenge"."£$".$ChallengeID."' class='ChallengeButtonNo'>Decline</a></div>";
+				}
+			
+			break;
+			case "Declined":
+				$ChallengeStatus = "<div class='ChallengeStatus'>Declined</div>";
+				$ChallengeButtons = "";		
+			break;
+			case "Open":
+					
+				if($ChallengeAccepterUserId == $uid){
+				//the accepter
+				
+					if($ChallengeAccepterPlayed == "Yes"){
+						$ChallengeStatus = "<div class= 'ChallengeStatus'>Waiting for friend to play.<br><b>You've already played.<b></div>";	
+					}
+			
+					if($ChallengeAccepterPlayed == "No"){
+						$ChallengeStatus = "<div class= 'ChallengeStatus'>Its time to play</div>";
+						$ChallengeButtons = "<div class='ChallengeButton'><a href='/ride-simulators/".$simurl."' class='ChallengeButtonYes'>Play</a><a href='?action=DeclineChallenge"."£$".$ChallengeID."' class='ChallengeButtonNo'>Surrender</a></div>";				
+					}
+	
+				}
+
+				if($ChallengeOwnerUserId == $uid){
+				//the chanellegner
+				
+					if($ChallengeOwnerPlayed == "Yes"){
+						$ChallengeStatus = "<div class= 'ChallengeStatus'>Waiting for friend to play.<br><b>You've already played.<b></div>";	
+					}
+			
+					if($ChallengeOwnerPlayed == "No"){
+						$ChallengeStatus = "<div class= 'ChallengeStatus'>Its time to play</div>";
+						$ChallengeButtons = "<div class='ChallengeButton'><a href='/ride-simulators/".$simurl."' class='ChallengeButtonYes'>Play</a><a href='?action=DeclineChallenge"."£$".$ChallengeID."' class='ChallengeButtonNo'>Surrender</a></div>";				
+					}
+				
+				}			
+					
+			break;
+			case "Finished":
+				$ChallengeStatus = "<div class= 'ChallengeStatus'>Challenge Completed</div>";
+				$ChallengeButtons =	"";
+			break;
+
+		}
+		
+		$deletedata = "<a href='?action=DeleteChallenge"."£$".$ChallengeID."' id='DeleteChallengeIcon' class='fa fa-trash'></a>";
+		
+		$phpdate = strtotime( $ChallengeStartDate );
+		$challengestarterdatenew = date( 'd-m-Y', $phpdate );
+		
+		$aboutchallenge = str_replace("-"," ", $ChallengeType) . " On " .lookupSimNumberFromNid($ChallengeSimID). " In " . $ChallengeDuration;
+				
+		
+		$output.= "<td>".$ii."</td>"."<td>".lookupUserNumber($ChallengeOwnerUserId) . " <b>VS</b> " . lookupUserNumber($ChallengeAccepterUserId) . "</td><td>".$aboutchallenge."</td><td>".lookupSimNumberFromNid($ChallengeSimID)."</td><td>".$challengestarterdatenew."</td>"."<td>".$ChallengeStatus.$ChallengeButtons."</td><td>".$deletedata."</td>";
+		
+		//End of table row	
+		$output .= "</tr>";
+		
+		}
+		
+	//if theres no chanellenges yet
+	if($ii == ""){
+	$output.= "You don't have any challenges yet!";
+	
+	$output.="<style>
+	
+	#ChallengesTable {
+  		display: none;
+	}
+	
+	</style>";
+	
+	}
+		
+	//End of table 	
+	$output .= "</table>";	
+
+	//End Div
+ 	$output .= "</div>";
+	
+	//Challenge System Flex
+	$output .= "<div class='ChallengeSystemMain'>";
+	
+	//Challenge System Flex
+	$output .= "<div class='Challenge3'>";
+	
+	//Challenge Banner
+	$output.= "<MainBlockHeading>Create A Challenge</MainBlockHeading>";
+		
+	$output.= "<div class='ChallengeFlex'>";
+		
+	$output.= "<div class='Challenge'>";
+			
+	$output.= "<form method='post' action='/challengesubmit.php'>";
+		
+	//jsfiddle.net/9z5du/870/
+	$passvalue = "";
+
+	//Hide stuff script 
+	$output.= '<script>
+
+	var obj = "'.$passvalue.'";
+
+ 	showSelectedType(obj);
+ 
+  	function showSelectedType(obj){
+ 		(function ($, Drupal) {
+ 		'."'use strict';".'
+ 		
+  	$(".SimsList").removeClass("selected1");
+  	
+  	$(obj).addClass("selected1");
+	
+	$(".SimsInfo1").hide();
+	
+	$("." + obj).show();
+	
+	if(obj == "none"){
+			$(".placeholder").show();
+	}
+	if(obj !== "none"){
+			$(".placeholder").hide();
+	}
+	
+	
+	
+	})(jQuery, Drupal);
+ 	}
+ 	
+ 	
+   	function valueToBeatCheck(obj){
+ 		(function ($, Drupal) {
+ 		'."'use strict';".'
+
+		console.log(obj);
+
+		if(obj == "score$$Total-Score"){
+			$(".ChallengeSwitch").fadeIn();
+			$(".ValueSection").hide();
+		}
+		
+		if(obj !== "score$$Total-Score"){
+			$(".ChallengeSwitch").fadeOut();
+			$(".TimeSection").show();
+			$(".ValueSection").show();
+		}
+		
+		
+
+
+	})(jQuery, Drupal);
+ 	}
+ 	
+ 	
+ 	function showFriendPhoto(obj){
+ 		(function ($, Drupal) {
+ 		'."'use strict';".'
+ 		
+
+	$(".friendphoto").hide();
+	
+	$("." + obj).show();
+	
+	
+	if(obj == "none"){
+			$(".placeholder2").show();
+	}
+	if(obj !== "none"){
+			$(".placeholder2").hide();
+	}
+	
+	
+	})(jQuery, Drupal);
+ 	}
+ 	
+ 	
+ 	
+ 	
+ 	
+ 	
+ 	 function customChallengeChecker(obj){
+ 		(function ($, Drupal) {
+ 		'."'use strict';".'
+
+		if(obj == "Custom"){
+			$(".MainChallengeSection").show();
+		}
+		
+		if(obj !== "Custom"){
+			$(".MainChallengeSection").hide();
+		}
+		
+	})(jQuery, Drupal);
+ 	}
+ 	
+ 	
+ 	
+ 	
+ 	
+ 	function handleClick(cb){
+ 		(function ($, Drupal) {
+ 		'."'use strict';".'
+		
+		if(cb.checked == true){
+			$(".TimeSection").hide();
+			$(".ValueSection").show();
+		}
+		
+		if(cb.checked == false){
+			$(".TimeSection").show();
+			$(".ValueSection").hide();
+		}
+		
+			
+	})(jQuery, Drupal);
+ 	}
+ 	
+ 	
+ 	
+ 	
+ 	
+ 	</script>';
+
+
+	
+	//sims avaibale array
+	$simstack1 = array();
+	
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$query = $con->query('SELECT `entity_id` FROM `ex1i_node__field_challenge_mode` where `field_challenge_mode_value` = 1');
+	$data = $query->fetchAll();
+	
+	//select start
+	$output.= "<select required name='sims' id='ChallengeDrop' onChange='showSelectedType(this.options[this.selectedIndex].value);'>";
+
+	$output.= "<option value='none'>Select A Sim</option>";
+
+//stackoverflow.com/questions/5024056/how-to-pass-parameters-on-onchange-of-html-select
+	
+	foreach($data as $item) {		
+		$challengesimnumber=($item->entity_id);
+		$challengesimname=lookupSimNumberFromNid($item->entity_id);
+		
+		$challengesimnametag = str_replace(" ","_",trim($challengesimname));
+		
+		$output.= "<option value=".trim($challengesimnumber).">".$challengesimname."</option>";
+
+		$simstack1[] = array('simname'=>$challengesimname,'simnumber'=>$challengesimnumber);
+
+	}	
+	
+	//select end
+	$output.= "</select>";
+		
+	//Sim Placeholder 
+	$output.= "<div class='placeholder'>";
+	$output.= "<img id='challengephoto2' src='https://ridesims.com/challenge2022/AddSimIcon.png'>";
+	$output.= "</div>";
+	
+	//setup drop down for challenges
+	$challengedropdown = "";
+	
+	$challengedropdown.= "<div class='placeholder'>";
+	$challengedropdown.= "<select name='PlaceHolderSelector' id='ChallengeDrop3'>";
+	$challengedropdown.= "<option value='Select A Sim'>Choose A Sim First</option>";
+	//$challengedropdown.= "<option value=''></option>";
+ 	$challengedropdown.= "</select>";
+	$challengedropdown.= "</div>";
+	
+	
+	
+	
+	
+	for ($i=0; $i<count($simstack1); $i++){
+
+	$simstackdata=$simstack1[$i];
+	$simstackname= trim($simstackdata['simname']);
+	$simstacknumber= trim($simstackdata['simnumber']);
+	
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$query = $con->query("SELECT enfc1.entity_id, `field_challenge1_value`, `field_challenge2_value`, `field_challenge3_value`, `field_challenge4_value`, `field_challenge5_value` FROM ex1i_node__field_challenge1 enfc1 LEFT JOIN ex1i_node__field_challenge2 enfc2 ON enfc2.entity_id = enfc1.entity_id LEFT JOIN ex1i_node__field_challenge3 enfc3 ON enfc3.entity_id = enfc1.entity_id LEFT JOIN ex1i_node__field_challenge4 enfc4 ON enfc4.entity_id = enfc1.entity_id LEFT JOIN ex1i_node__field_challenge5 enfc5 ON enfc5.entity_id = enfc1.entity_id WHERE enfc1.entity_id = '".$simstacknumber."'");
+	$data = $query->fetchAll();
+	
+	foreach($data as $item) {		
+	
+		//values from sql search
+		$entityid=($item->entity_id);
+		$challenge1=($item->field_challenge1_value);
+		$challenge2=($item->field_challenge2_value);
+		$challenge3=($item->field_challenge3_value);
+		$challenge4=($item->field_challenge4_value);
+		$challenge5=($item->field_challenge5_value);
+		
+		$simnumberfromnid = lookupSimNumberFromNid($entityid);
+		$challengesimnametag = str_replace(" ","_",trim($simnumberfromnid));
+		
+		$simpromophoto = "<img id='challengephoto' src='".getSimPromoImageFromTitle($simnumberfromnid)."'>";
+
+		$output.= "<div class='SimsInfo1 ".$entityid."' style='display:none;'>";
+		$challengedropdown.= "<div class='SimsInfo1 ".$entityid."' style='display:none;'>";
+	
+		//Photo
+		$output.= $simpromophoto;
+		
+		//Challenges
+		
+		//Start of drop down
+		//$challengedropdown.= "<select name='challengetypes-".$entityid."' onChange='valueToBeatCheck(this.options[this.selectedIndex].value);'>";
+		$challengedropdown.= "<select id='ChallengeDrop3' name='challengetypes-".$entityid."' onChange='valueToBeatCheck(this.options[this.selectedIndex].value);'>";
+
+		
+		//Pick Something Option
+		$row01 = "Choose A Challenge";
+		$challengedropdown.= "<option value=''>".$row01."</option>";
+								
+		//Total Score Option
+		$row0 = "Total Score";
+		$sendvalue0 = str_replace(" ","-",$row0); 
+		$challengedropdown.= "<option value="."score$$".$sendvalue0.">".$row0."</option>";
+
+		//Challenge 1 Option
+		if($challenge1 != ""){
+			$sendvalue1 = str_replace(" ","-",$challenge1); 
+			$challengedropdown.= "<option value="."challenge1$$".$sendvalue1.">".$challenge1."</option>";
+		}
+		
+		//Challenge 2 Option
+		if($challenge2 != ""){
+			$sendvalue2 = str_replace(" ","-",$challenge2); 
+			$challengedropdown.= "<option value="."challenge2$$".$sendvalue2.">".$challenge2."</option>";
+		}
+
+		//Challenge 3 Option
+		if($challenge3 != ""){
+			$sendvalue3 = str_replace(" ","-",$challenge3); 
+			$challengedropdown.= "<option value="."challenge3$$".$sendvalue3.">".$challenge3."</option>";
+		}
+
+		//Challenge 4 Option
+		if($challenge4 != ""){
+			$sendvalue4 = str_replace(" ","-",$challenge4); 
+			$challengedropdown.= "<option value="."challenge4$$".$sendvalue4.">".$challenge4."</option>";
+		}
+		
+		//Challenge 5 Option
+		if($challenge5 != ""){
+			$sendvalue5 = str_replace(" ","-",$challenge5); 
+			$challengedropdown.= "<option value="."challenge5$$".$sendvalue5.">".$challenge5."</option>";
+		}		
+
+
+		//End of Drop Down	
+		$challengedropdown.=  "</select>";
+		$challengedropdown.=  "</div>";
+		$output.= "</div>";
+
+	}
+
+	}
+	
+
+	$output .= "</div>";	
+	
+	$output .= "<div class='Challenge'>";	
+	
+	// $output.= "<b>Friend To Challenge:</b><br>";
+
+	//friends photo array
+	$friendstack1 = array();
+		
+	//$output.= "<select required name='friends' >";
+	$output.= "<select required id='ChallengeDrop' name='friends' onChange='showFriendPhoto(this.options[this.selectedIndex].value);'>";
+
+	$output.= "<option value=''>Select A Friend</option>";
+	
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$query = $con->query('SELECT `friendid` FROM `playerfriends` where `playerid` =:frid', array(':frid'=>$uid));	
+	
+	$data = $query->fetchAll();
+		foreach($data as $item) {		
+		//Get Sim Name - Working
+		$friendid1=($item->friendid);
+  		$friendid=lookupUserNumber($friendid1);
+  				
+		$output.= "<option value=".$friendid1.">".$friendid."</option>";
+		
+		$friendstack1[] = array('friendphoto'=>getUserImageForNumberNew($friendid1),'friendname'=>$friendid,'friendidnumber'=>$friendid1);
+		
+		}	
+	$output.= "</select>";
+
+
+ 	$friendprofilephoto = "https://ridesims.com/sites/default/files/inline-images/RideSimsLogoSolidBlueSmall.png";
+
+	$output.= "<input type='hidden' id='userid' name='userid' value='".$uid."'>";
+	
+	//Firend Photo Placeholder 
+	$output.= "<div class='placeholder2'>";
+	$output.= "<img id='challengephoto2' src='https://ridesims.com/challenge2022/AddPlayerIcon.png'>";
+	$output.= "</div>";
+	
+		
+	//show user photo selected in drop down 
+	for ($i=0; $i<count($friendstack1); $i++){
+	
+	//$output.= var_dump($friendstack1);
+
+	$simstackdata=$friendstack1[$i];
+	$friendsname= trim($simstackdata['friendname']);
+	$friendsid= trim($simstackdata['friendidnumber']);
+	$friendsphoto= trim($simstackdata['friendphoto']);
+
+	$output.= "<div class='"."friendphoto ".$friendsid."'>";
+	$output.= "<img id='challengephoto' src='".$friendsphoto."'>";
+	$output.="</div>";
+	
+	}
+
+	//End of Challenge 4
+	$output .= "</div>";	
+
+	//Start of Challenge 2
+	$output .= "<div class='Challenge2'>";	
+
+	
+	$output.= "<select name='PreMadeChallenges' id='ChallengeDrop4' onChange='customChallengeChecker(this.options[this.selectedIndex].value);'>";
+	
+   
+	$PreMadeChallengesarray = array (
+  array("Use a pre-made challenges or create your own","Custom"),
+  array("Score the highest score in 15 minutes","PreWritten1"),
+  array("Most train dispatches in 15 minutes","PreWritten2"),
+  array("Most mechanic call outs in 15 minutes","PreWritten3"),
+  array("Most guests on the ride in 15 minutes","PreWritten4")
+);
+	
+    //$output .= var_dump ($timetocompetearray);
+    foreach($PreMadeChallengesarray as $item){
+        
+		$output.= "<option value='".($item[1])."'>".$item[0]."</option>";
+    }
+        
+	$output.= "</select>";
+
+
+	
+	if ($SystemRolesButtonAvaibale == "disabled"){
+	
+	//$output.="premium funcations are disabled ";
+	$output.= "<Br>To create custom challenges you need to be a VIP member. <br><b><a href='https://www.patreon.com/RideSims'>Become a VIP member today!</a></b><br>";
+
+	
+	}else{
+	
+	$output .= "<div class='MainChallengeSection'>";	
+	
+	$output .= "<div class='ChallengeFlex'>";	
+
+
+	$output.= $challengedropdown;
+
+//https://stackoverflow.com/questions/4471401/getting-value-of-html-checkbox-from-onclick-onchange-events
+
+	$output.= "<div class='ChallengeSwitch' style='display:none;'>";
+	
+	$output.= "<label class='switch'>";
+	$output.= "<input name='ChallengePickSwitch' type='checkbox' onclick='handleClick(this);'>";
+	$output.="<span class='slider roubd'></span></label>";
+	
+	$output.= "<br>Switch Between Value or Time to beat";
+	$output.= "</div>";
+
+	$output .= "<div class='ValueSection'>";
+	$output.= "<input type='number' id='ChallengeDrop2' placeholder='Value To Beat' name='challengevalue'  maxlength='5'>";
+	$output .= "</div>";	
+
+	$output .= "<div class='TimeSection'>";
+
+	$output.= "<select  name='timetocompete' id='ChallengeDropTime'>";
+   
+	$timetocompetearray = array (
+  array("Time To Complete",""),
+  array("5 Minutes","300"),
+  array("15 Minutes","900"),
+  array("30 Minutes","1800"),
+  array("1 Hour","3600"),
+  array("2 Hours","7200")
+);
+	
+    //$output .= var_dump ($timetocompetearray);
+    foreach($timetocompetearray as $item){
+        
+		$output.= "<option value='".($item[1])."'>".$item[0]."</option>";
+    }
+        
+	$output.= "</select>";
+	
+	//end of challenge flex
+	$output.= "</div>";
+	$output.= "</div>";
+	$output.= "</div>";
+	}
+
+
+	//End of Challenge 3
+	$output .= "</div>";	
+
+	//extra data to submit in form 
+	$output .= "<input type='hidden' name='SystemRole' value='".$SystemRoll."' />";
+
+
+	//Start of Challenge 5
+	$output .= "<div class='ChallengeSubmit'>";	
+
+	$output.= "<input type='submit' value='Send Challenge!' id='challengesubmitbutton' name='challengesubmit'>";
+	
+	$output.= "</form>";
+
+	$output.= "</div>";
+	
+	//end of flex 
+	$output.= "</div>";
+
+
+	$output.= "Your friend will be notified of the challenge once you send them the challenge!";
+
+
+//End Div
+ 	$output .= "</div>";
+
+
+
+$output .= "<div class='Challenge4'>";	
+
+$output.= "<MainBlockHeading5>Your Friends</MainBlockHeading5>";
+
+
+ 	$query = $con->query('SELECT `friendid` FROM `playerfriends` where `playerid` =:frid', array(':frid'=>$uid));		
+ 	$data = $query->fetchAll();
+
+ 	$output.= "<ul class='FriendsListMainNew'>";
+ 	foreach($data as $item) {
+		$friendid=$item->friendid;
+		
+		
+		$friendimage = getUserImageForNumberNew($friendid);
+		$friendname = lookupUserNumber($friendid);
+		
+		$output.= "<li class='FriendsListNew'>";
+		$output.= "<div id='friendsbox2'>";
+		$output.= "<img id='friendsboximage' src='".$friendimage."' alt='ride sims friends'>";
+		$output.= "<br>".$friendname;
+		$output.= "</div>";
+		$output.= "</li>";
+		
+		
+ 	}
+	$output.= "</ul>";
+
+	
+	$output.="<form id='UserSearchForm' action='/player-search?name=' method='get'>";
+	
+	$output.= "<div id='SearchForFriendsDiv'>";
+	$output.="<input type='text' id= 'UserSearchBox' placeholder='Search For Someone...' name='search_api_fulltext'><button type='submit' id='UserSearchButton' value='submit' ><i class='fa fa-search'></i></button>";
+	$output .= "</div>";
+	
+	$output.="</form>";
+	$output.="</div>";
+
+
+	$output .= "<div class='Challenge3'>";	
+	$output.= "<div id='ChallengesCompleted'>";
+
+	$completedchallenges=0;
+	$imagetosendback=""; 	
+ 	 	
+ 	$query = $con->query(' select sid.field_ride_sim_id_value sim, v1.field_challenge_sql_value_1_value val1, v2.field_challenge_sql_value_2_target_id val2, v3.field_challenge_sql_value_3_value val3, v4.field_challenge_sql_value_4_target_id val4, v5.field_challenge_sql_value_5_target_id val5, v6.field_challenge_medal_target_id medalimg '.
+		' FROM '.
+	 	' `ex1i_node__field_challenge_sql_value_1` v1, '.
+	 	' `ex1i_node__field_challenge_sql_value_2` v2, '.
+	 	' `ex1i_node__field_challenge_sql_value_3` v3, '.
+	 	' `ex1i_node__field_challenge_sql_value_4` v4, '.
+	 	' `ex1i_node__field_challenge_sql_value_5` v5, '.
+	 	' `ex1i_node__field_based_upon_simulator` s, '.
+	 	' `ex1i_node__field_ride_sim_id` sid, '.
+ 		' `ex1i_node__field_beta_mode` b, '. 
+ 		' `ex1i_node__field_challenge_medal` v6 '. 
+ 		' WHERE '.
+ 		' v1.entity_id = v2.entity_id '.
+ 		' AND v1.entity_id = v3.entity_id '.
+ 		' AND v1.entity_id = v4.entity_id '.
+ 		' AND v1.entity_id = v5.entity_id '.
+ 		' AND v1.entity_id = s.entity_id '.
+ 		' AND b.entity_id = s.field_based_upon_simulator_target_id '.
+ 		' AND b.entity_id = sid.entity_id '.
+ 		' AND b.field_beta_mode_value=0 ' .
+ 		' AND v1.entity_id = v6.entity_id ' 
+ 		); 	
+ 	$data = $query->fetchAll();
+ 	$allmedals=0;
+ 	
+ 	//medals earnt photo array
+	$medalstack1 = array();
+ 	
+ 	foreach($data as $item) {
+		$v1=$item->val1;
+		$v2=$item->val2;
+		$v3=$item->val3;
+		$v4=$item->val4;
+		$v5=$item->val5;
+		$sim = $item->sim;
+		$medalimg = $item->medalimg;
+		$parts=array($v1,$v2,$v3,$v4,"","",$v5, $medalimg);
+		$allmedals++;
+		
+			$imagetosendback = checkChallengeCompletedAndSavePhoto($con,$uid,$sim,$parts);
+			//$output.= " medals earnt: ". $imagetosendback;
+			
+			//if its not nothing
+			if($imagetosendback != "nothing"){
+				$medalstack1[] = array('medalphoto'=>$imagetosendback);
+			}
+ 
+ 			if (checkChallengeCompleted($con,$uid,$sim,$parts)){
+				$completedchallenges++;
+ 			}
+ 		}
+	
+	
+	$output.= "<MainBlockHeading3>Your Challenges</MainBlockHeading3>";
+	
+	$output.= "<div id='MedalsMain'>";
+	
+	for ($i=0; $i<count($medalstack1); $i++){
+	
+		$output.= "<div id='MedalsStack'>";
+				
+		$medalstackdata=$medalstack1[$i];
+		$medalphoto = trim($medalstackdata['medalphoto']);
+		
+		$medaltoshow = getMedalPhotoFromID($medalphoto);
+		
+		$output.= "<img src='".$medaltoshow."' alt='Medals'>";
+		
+		$output.= "</div>";
+	
+	}
+
+	$output.= "</div>";
+	$output.= "</div>";
+	
+	$output.= "<b>Completed Challenges: " . $completedchallenges."/".$allmedals."</b>";
+	
+	$output.= "</div>";
+	
+	
+	
+	$output .= "<div class='Challenge5'>";	
+	
+	$output.= "<MainBlockHeading4>Challenge Leaders</MainBlockHeading4>";
+	
+
+
+
+	//get table of everyones challenges
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT `PlayerID`, `NumberOfChallengesCompleted` FROM ChallengesCompleted ORDER BY `NumberOfChallengesCompleted` DESC');
+	$data = $query->fetchAll();
+	
+	$loggedin_uid = \Drupal::currentUser()->id();
+	
+	$counter= 1;
+	$foundme=false;
+	
+	$output.= "<table>";
+	
+	foreach($data as $item) {
+		if (($counter<6) || ($item->PlayerID == $loggedin_uid)){
+			$uname = lookupUserNumber($item->PlayerID);
+			$score = $item->NumberOfChallengesCompleted;
+			$scoreformatted = number_format($score);
+			
+			$output .= "<tr".($item->PlayerID == $loggedin_uid?' class="myscore" ':'')."><td>$counter</td><td><a href='/user/".$uname."'>".$uname."</a></td><td>".($scoreformatted)."/".$allmedals."</td></tr>";
+			
+			
+			if ($item->PlayerID == $loggedin_uid) $foundme=true;
+		}
+		if (($counter>5) && $foundme) break;
+		$counter++;
+
+	}
+
+	$output.= "</table>";
+	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	$output .= "</div>";
+	
+	
+	//End of Challenge 5
+	$output .= "</div>";	
+
+
+	//End of challenge main div
+	$output .= "</div>";     
+		     
+	}else{
+	
+	//not  logged in
+	$output.="You must be logged in to challenge people.";
+	
+	}
+		    
+	
+		     
+    $variables['output'] = $output;
+        	
+	}	
+
+
+
+
+
+	//*********************************** 2024 Code ***********************************
+
+
+	//All Sims Array Setup
+	global $quickguidesdata;		
+	if(!is_array($quickguidesdata)) $quickguidesdata=array();	
+	
+	//Beta Sim Array Setup
+	global $BetaSimData;		
+	if(!is_array($BetaSimData)) $BetaSimData=array();	
+
+	//Latest Sim Release Array Setup
+	global $LatestReleaseSimData;		
+	if(!is_array($LatestReleaseSimData)) $LatestReleaseSimData=array();	
+	
+	//Staff Beta Sim Array Setup
+	global $StaffBetaSimData;		
+	if(!is_array($StaffBetaSimData)) $StaffBetaSimData=array();	
+
+	//Challenge of Month Array Setup
+	global $ChallengeOfMonth;		
+	if(!is_array($ChallengeOfMonth)) $ChallengeOfMonth=array();	
+		
+	//Challenge of Month Array Setup
+	global $PlusBlogDataSingle;		
+	if(!is_array($PlusBlogDataSingle)) $PlusBlogDataSingle=array();	
+			
+	//Challenge of Month Array Setup
+	global $PlusBlogDataThree;		
+	if(!is_array($PlusBlogDataThree)) $PlusBlogDataThree=array();		
+
+	
+	global $allTypes;
+	if (!isset($allTypes)) $allTypes=array();
+
+
+	//Ride Sim - Main Display All Sims- Data Collecting
+	if ($view->storage->id() == 'ride_sims_view_2024' && $view->current_display == 'page_1' && $field->field == 'field_ride_sim') {
+		
+ 	global $allTypes;
+	$parts = explode('|^',$variables['output']);
+	
+ 	$quickguidesdata[] = array('photo'=>$parts[0],'url'=>$parts[1],'category'=>$parts[2],'officalstatus'=>$parts[3],'betamode'=>$parts[4],'hardness'=>$parts[5],'simname'=>$parts[6]);
+
+	//$p2=trim(strip_tags($parts[2]));
+
+	//gets types 
+ 	$p2=trim(strip_tags($parts[2]));
+ 	 	
+ 	$p2future = explode(',',$p2);		
+ 	for ($i=0; $i<count($p2future); $i++){
+ 		if(!in_array(strip_tags(trim($p2future[$i])),$allTypes))$allTypes[]=strip_tags(trim($p2future[$i]));	
+	}
+	     
+    //$output .= "show this<br>";	
+    //$output .= print_r($allTypes,true);	       
+		     	     
+	$output = "";		     	     
+		     	     
+    $variables['output'] = $output;    	
+	}	
+
+
+	//Ride Sim - Main Display Beta Sim - Data Collecting
+	if ($view->storage->id() == 'ride_sims_view_2024' && $view->current_display == 'block_3' && $field->field == 'field_ride_sim') {
+		
+	global $BetaSimData;
+	
+	$parts = explode('|^',$variables['output']);
+	
+ 	$BetaSimData[] = array('photo'=>$parts[0],'url'=>$parts[1],'category'=>$parts[2],'officalstatus'=>$parts[3],'betamode'=>$parts[4],'hardness'=>$parts[5],'simname'=>$parts[6]);
+
+	$output = "";	     	     
+    
+    $variables['output'] = $output;    	
+	}	
+
+
+	//Ride Sim - Main Display latest Sim - Data Collecting
+	if ($view->storage->id() == 'ride_sims_view_2024' && $view->current_display == 'block_5' && $field->field == 'field_ride_sim') {
+		
+	global $LatestReleaseSimData;
+	
+	$parts = explode('|^',$variables['output']);
+	
+ 	$LatestReleaseSimData[] = array('photo'=>$parts[0],'url'=>$parts[1],'category'=>$parts[2],'officalstatus'=>$parts[3],'betamode'=>$parts[4],'hardness'=>$parts[5],'simname'=>$parts[6]);
+
+	$output = "";	     	     
+    
+    $variables['output'] = $output;    	
+	}	
+
+
+	//Ride Sim - Main Display Staff Beta Sim - Data Collecting
+	if ($view->storage->id() == 'ride_sims_view_2024' && $view->current_display == 'block_4' && $field->field == 'field_ride_sim') {
+		
+	global $StaffBetaSimData;
+	
+	$parts = explode('|^',$variables['output']);
+	
+ 	$StaffBetaSimData[] = array('photo'=>$parts[0],'url'=>$parts[1],'category'=>$parts[2],'officalstatus'=>$parts[3],'betamode'=>$parts[4],'hardness'=>$parts[5],'simname'=>$parts[6]);
+
+	$output = "";	     	     
+    
+    $variables['output'] = $output;    	
+	}	
+
+	//Ride Sim - Main Display Challenge Of The Month - Data Collecting
+	if ($view->storage->id() == 'ride_sims_view_2024' && $view->current_display == 'block_2' && $field->field == 'field_challenge_title') {
+		
+	global $ChallengeOfMonth;
+	
+	$parts = explode('|^',$variables['output']);
+	
+// {{ field_based_upon_simulator }} |^
+// {{ field_challenge_description }} |^
+// {{ field_challenge_of_ }} |^
+// {{ field_challenge_title }}
+	
+ 	$ChallengeOfMonth[] = array('basedonsim'=>$parts[0],'challdescription'=>$parts[1],'challofweek'=>$parts[2],'challtitle'=>$parts[3]);
+
+	$output = "";	     	     
+    
+    $variables['output'] = $output;    	
+	}	
+
+
+	//Ride Sim - Main Display - DISPLAY Element
+	if ($view->storage->id() == 'ride_sims_view_2024' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim') {
+		
+	//importing data 
+	global $allTypes;
+	global $BetaSimData;
+	global $ChallengeOfMonth;
+	global $StaffBetaSimData;
+	
+ 	$output='
+ 	
+ 	<style>
+ 	
+ 	.RideSimsDisplayData {
+		margin-left: 30px;
+		margin-right: 30px;
+		margin-top: 30px;
+		margin-bottom: 30px;
+	}
+ 	
+	li.selectatype {
+		color: #fff;
+		line-height: 23px;
+		text-decoration: none;
+		border-bottom: none;
+		text-align: center;
+		background: white;
+		width: 20%;
+		cursor: pointer;
+	}
+	
+	li.selectatype p{
+		visibility: hidden;
+		height: 0;
+	}
+	
+	.selectatype.selected1 {
+	}
+ 	
+ 	.NavigationFlex{
+    	display: flex;
+    	flex-wrap: wrap;
+    	list-style-type:none;
+    	margin-top: 10px;
+	}
+	
+	.SimDataFlex{
+    	display: flex;
+    	flex-wrap: wrap;
+    	list-style-type:none;
+    	margin-top: 10px;
+    	width: 20%;
+		border-left: 5px solid #ddf6fe;
+		border-right: 5px solid #ddf6fe;
+		border-bottom: 5px solid #ddf6fe;	
+}
+ 	
+ 	
+ 	.RideSimsList {
+		display: flex;
+		flex-wrap: wrap;
+	}
+	
+	.RideSimsList img {
+   		width: 100% !important;
+	}
+
+	.RideSimsList simtitle {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 20px;
+    	text-shadow: 0px 0px 10px black;
+    	align-items: center !important;
+	}
+	
+	.RideSimsList siminfo {
+   	 	width: 100%;
+   	 	text-align: center;
+    	color: #fff;
+    	font-family: helvetica, sans-serif;
+    	font-size: 15px;
+    	text-shadow: 0px 0px 01px black;
+    	align-items: center !important;
+	}	
+	
+	RideSims24Banner{ 	
+		padding-left: 2%;
+		margin: 0;
+		text-align: center;
+		width: 100%;
+		height: 50px;
+		font-size: 20px;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		color: #fff;
+		font-family: Arial;
+		text-shadow: 0px 0px 5px black;
+		margin-bottom: 0px;
+	}
+	
+	.BannerGreen{
+		background-color: #86E61F;
+	}
+	
+	.BannerBlue{
+		background-color: #35AAB6;
+	}
+	
+	.BannerPink{
+		background-color: #E12C71;
+	}
+	
+	.DoubleDisplayPage {
+		display: flex;
+	}
+	
+.SmallBanner1 {
+width: 50%;
+margin-right: 1%;
+padding-bottom: 20px;
+background: #BFE0F1;
+position: relative;
+}
+
+.SmallBanner2 {
+width: 50%;
+margin-left: 1%;
+padding-bottom: 20px;
+background: #BFE0F1;
+position: relative;
+}
+
+.ChallengeOfWeekText {
+width: 100%;
+text-align: center;
+color: #fff;
+font-family: helvetica, sans-serif;
+font-size: 20px;
+text-shadow: 0px 0px 10px black;
+align-items: center !important;
+}
+	
+	.SimDetails {
+		text-align: center;
+		position:absolute;
+		top: 50%;
+		width: 100%;
+	  -ms-transform: translateY(-50%);
+  transform: translateY(-50%);
+	}
+	
+	a.simlink {
+    	position: relative;
+	}
+	
+	
+	.playnowbutton2 {
+font-family: helvetica, sans-serif;
+  text-transform: uppercase;
+  color: white;
+  height: auto;
+  font-size: 18px;
+  width: 200px;
+  text-align: center;
+  border-radius: 125px;
+  background: #CC0E55;
+  padding: 5px;
+  font-weight: bold;
+  position: initial;
+  border-color: #CC0E55;
+  border-style: solid;
+  display: inline-block;
+}
+	
+.PlayButtonDiv {
+text-align: center;
+padding-top: 10px;
+}
+
+.ChallengeTextDiv {
+text-align: center;
+position: absolute;
+top: 47%;
+width: 100%;
+-ms-transform: translateY(-50%);
+transform: translateY(-50%);
+}
+
+
+	/* Mobile CSS Changes Code */
+	@media only screen and (max-width: 850px) {
+
+		siminfo {
+    		display: none !important;
+		}
+		
+		simtitle {
+    		font-size: 16px !important;
+		}
+		
+		.SimDataFlex {
+  		width: 50% !important;
+  		}
+  		
+  		li.selectatype {
+  		width: 33.33% !important;
+  		}
+  		
+  		.DoubleDisplayPage {
+  		flex-wrap: wrap;
+		}
+		
+		.SmallBanner1 {
+  		width: 100% !important;
+  		margin-right: 0% !important;
+  		}
+  		
+  		.SmallBanner2 {
+  		width: 100% !important;
+  		margin-left: 0% !important;
+  		}
+  		
+  		li.selectatype:last-child {
+  		width: 100% !important;
+  		background: #177568 !important;
+		}
+  		
+
+	}
+
+ 	</style>
+ 	
+ 	
+ 	<script>
+ 
+ 	function showSelectedType(obj){
+ 		(function ($, Drupal) {
+ 		'."'use strict';".'
+
+	console.log("RideSimsList sucks");
+
+  	$(".selectatype").removeClass("selected1");
+  	
+  	$(obj).addClass("selected1");
+ 		$(".RideSimsList").find(".All").fadeOut();
+ 		
+ 		$(".RideSimsList").find("."+$(obj).text().replace(/ /g,"_")).fadeIn();
+ 				
+	})(jQuery, Drupal);
+ 	}
+ 	</script>
+ 	';
+ 	
+ 	
+ 	
+ 	//Start of page
+ 	$output.= "<div class='RideSimsDisplayData'>";
+ 	
+ 	
+ 	
+ 	
+	$types=$allTypes;
+	
+	//$output .=print_r($quickguidesdata,true);
+	
+	$output.= "<RideSims24Banner class='BannerBlue'>Simulator Categories</RideSims24Banner>";
+
+	$output.='<ul class="typeselector NavigationFlex">';
+	$output.='<li class="selectatype selected1" onclick="showSelectedType(this);"><p>All</p><img src="/SimCategoryIcons/SimulationCat_All.fw.png"></li>';
+	for ($i=0; $i<count($types); $i++){
+		$MakeSimNameReadableIMG = strip_tags(str_replace(' ','',trim($types[$i])));
+		$MakeSimNameReadableTXT = strip_tags(str_replace(' ','_',trim($types[$i])));
+		$ImageThis = "<p>".$MakeSimNameReadableTXT."</p><img src='/SimCategoryIcons/SimulationCat_" . $MakeSimNameReadableIMG .".fw.png'>";
+		$output.='<li class="selectatype '.'" onclick="showSelectedType(this);">'.$ImageThis.'</li>';
+	}
+	$output.='</ul>';
+	
+
+	$quickguidesdata=sortArrayOfAsociativeArraysOnKey($quickguidesdata,'simname');
+
+
+	$output.= "<br>";
+
+
+
+	$output.= "<div class='DoubleDisplayPage'>";
+
+
+
+
+	//challenge of month
+	$output.= "<div class='SmallBanner1'>";
+	$output.= "<RideSims24Banner class='BannerGreen'>Challenge Of The Month</RideSims24Banner>";
+	
+	for ($i=0; $i<count($ChallengeOfMonth); $i++){
+		$qg=$ChallengeOfMonth[$i];
+
+		$challengeofweek = trim($qg['challtitle']);
+		$ridesimname = str_replace("&#039;","'",trim($qg['basedonsim'])); 
+		
+  		$con = \Drupal\Core\Database\Database::getConnection('default');
+		$query = $con->query('SELECT efm.`uri` img, enfun.field_url_name_value link'.
+  						' FROM `ex1i_node__field_ride_sim` frs, '.
+  						' `ex1i_node__field_ride_sim_promo_large` frsp,'.
+  						' `ex1i_file_managed` efm, '.
+  						' `ex1i_node__field_url_name` enfun '.
+  						'  where frs.entity_id = frsp.entity_id '.
+  						'  and frs.entity_id = enfun.entity_id '.
+  						'  and frsp.field_ride_sim_promo_large_target_id = efm.fid'.
+  						'  and frs.field_ride_sim_value=:sim ', array(":sim"=>$ridesimname));
+		$data = $query->fetchAll();
+
+		foreach($data as $item) {
+			$ChallengeOfMonthIMG ="<img src='".str_replace('public:/','/sites/default/files/', $item->img)."' >";
+			$link=$item->link;
+		}
+	$output.= $ChallengeOfMonthIMG;
+	$output.= "<div class='ChallengeTextDiv'><div class='ChallengeOfWeekText'>".$challengeofweek."</div></div>";
+	$output .= '<div class="PlayButtonDiv"><a class="playnowbutton2" href="/ride-simulators/'.$link.'">Play Sim</a></div>';
+	
+
+	}
+	$output.= "</div>";
+
+	//current beta sim
+	$output.= "<div class='SmallBanner2'>";
+	$output.= "<RideSims24Banner class='BannerPink'>Beta Sim</RideSims24Banner>";
+	for ($i=0; $i<count($BetaSimData); $i++){
+		$qg=$BetaSimData[$i];
+		$output .= "<img src='" .trim($qg['photo'])."' alt='".trim($qg['simname'])."'>";
+		$output.= "<div class='ChallengeTextDiv'><div class='ChallengeOfWeekText'>".trim($qg['simname'])."</div></div>";
+		$output .= '<div class="PlayButtonDiv"><a class="playnowbutton2" href="/ride-simulators/beta/'.trim($qg['url']).'">Play Beta</a></div>';
+		
+	}
+	$output.= "</div>";
+
+	$output.= "</div>";
+
+
+
+	$output.= "<br>";
+
+	$output.= "<RideSims24Banner class='BannerBlue'>Simulators</RideSims24Banner>";
+
+
+	$output.='<div class="RideSimsList">';
+	for ($i=0; $i<count($quickguidesdata); $i++){
+	
+	$qg=$quickguidesdata[$i];
+
+	//Hyper Link
+	
+ 	$SimCatTypes1 = strip_tags(str_replace(' ','_',trim($qg['category'])));
+ 	$SimCatTypes = ucwords(str_replace(',',' ',trim($SimCatTypes1)));
+
+	
+	$output .= "<div class='SimDataFlex All ".$SimCatTypes."'>";
+	
+	$output .= "<a href='"."/ride-simulators/".trim($qg['url'])."'class='simlink'>";
+	$output .= "<img src='" .trim($qg['photo'])."' alt='".trim($qg['simname'])."'>";
+ 	$output .= "<div class='SimDetails'>";
+	$output .= "<simtitle>".trim($qg['simname'])."</simtitle>";
+	$output .= "<br>";
+	
+	$output .= "<siminfo>".trim($qg['hardness'])."</siminfo>";
+
+	$output .= "</div>";
+	$output .= "</div>";  
+
+	//End Of Hyper Link
+    $output .= "</a>";
+     
+	
+	}
+	$output.='</div>';
+	
+	
+	if (!$StaffBetaSimData) {
+	}else{
+		$output.= "<RideSims24Banner class='BannerPink'>Staff Beta Simulators</RideSims24Banner>";
+		$output.='<div class="RideSimsList">';
+		for ($i=0; $i<count($StaffBetaSimData); $i++){
+	
+	$qg=$StaffBetaSimData[$i];
+
+	//Hyper Link
+	
+ 	$SimCatTypes1 = strip_tags(str_replace(' ','_',trim($qg['category'])));
+ 	$SimCatTypes = ucwords(str_replace(',',' ',trim($SimCatTypes1)));
+
+	
+	$output .= "<div class='SimDataFlex'>";
+	
+	$output .= "<a href='"."/ride-simulators/staff-beta/".trim($qg['url'])."'class='simlink'>";
+	$output .= "<img src='" .trim($qg['photo'])."' alt='".trim($qg['simname'])."'>";
+ 	$output .= "<div class='SimDetails'>";
+	$output .= "<simtitle>".trim($qg['simname'])."</simtitle>";
+	$output .= "<br>";
+	
+	$output .= "<siminfo>".trim($qg['hardness'])."</siminfo>";
+
+	$output .= "</div>";
+	$output .= "</div>";  
+
+	//End Of Hyper Link
+    $output .= "</a>";
+     
+	
+	}
+		$output.='</div>';
+	}
+	
+	
+	//end of page
+	$output.='</div>';
+	
+    $variables['output'] = $output;    	
+ 	}
+
+
+
+
+
+
+	//ride sims plus banners display 
+	if ($view->storage->id() == 'ridesimsplusbanners' && $view->current_display == 'block_1' && $field->field == 'user_picture') {
+	
+	$Photo = $variables['output'];
+
+	$output = "<style>
+	
+	.RideSimsPlusDisplayBanners {
+		width: 100%;
+	}
+	
+	</style>";
+
+
+	$output.= "<div class='RideSimsPlusDisplayBanners'>";
+	
+	$UserBannerPhotoURL = $Photo;
+    
+    //$output .= $UserBannerPhotoURL;
+    
+	$output .= "<img src='https://ridesims.com/".checkPhotoURL($UserBannerPhotoURL)."'>";
+	
+	$output.= "</div>";
+
+    $variables['output'] = $output;    	
+	}
+
+
+
+
+
+
+	//2024 plus page - does nothing but nuke it 
+	if ($view->storage->id() == '2024_ride_sims_plus' && $view->current_display == 'page_1' && $field->field == 'field_ride_sim') {
+	$output = "";
+    $variables['output'] = $output;    		
+	}
+
+
+
+
+	//2024 plus page - news single 	
+	if ($view->storage->id() == '2024_ride_sims_plus' && $view->current_display == 'block_2' && $field->field == 'field_news_title') {
+		
+	global $PlusBlogDataSingle;
+	
+	$parts = explode('|^',$variables['output']);
+	
+ 	$PlusBlogDataSingle[] = array('photo'=>$parts[4],'url'=>$parts[2],'article'=>$parts[0],'title'=>$parts[5]);
+
+	$output = "";	     	     
+    
+    $variables['output'] = $output;    	
+	}	
+
+
+
+
+
+	//2024  Plus Page - DISPLAY STUFF
+	if ($view->storage->id() == '2024_ride_sims_plus' && $view->current_display == 'block_1' && $field->field == 'field_ride_sim') {
+		
+	//find user information about user
+    $uid = \Drupal::currentUser()->id();
+    $user = \Drupal\user\Entity\User::load($uid);
+    
+    //setup var output
+    $output = "";
+    
+//     //fancy banner with photo merge
+//     $output .= "<div class='PlusWelcomeBanner'>";
+//     //$output .= "<img src='https://ridesims.com/".getUserImageForNumberForVIP($uid)."'>";
+//     
+//     $UserBannerPhoto = getUserImageForNumberForVIP($uid)."?a=".date('Y-m-d-h-i');
+//     
+//     $output .= "<img src='https://ridesims.com/".checkPhotoURL($UserBannerPhoto)."'>";
+// 
+//     
+//     
+//     $output .= "</div>";
+    
+    
+    //then wrapped photo 
+    $uid = \Drupal::currentUser()->id();
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+
+	
+	//People and Duration 	   
+	$totalyearpeople = 0;
+	$totalyearduration = 0;
+  	$query = $con->query("SELECT SUM(pd.Challenge2) People1, SUM(SimDuration) Duration1 FROM playerdata pd, `ex1i_node__field_ride_sim_id` si, `ex1i_node__field_beta_mode` b WHERE pd.sim = si.field_ride_sim_id_value AND si.entity_id = b.entity_id AND b.field_beta_mode_value = 0 AND pd.username = :uuid ", array(':uuid' => $uid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$totalyearpeople = ($item->People1);
+		//$totalyearduration = $item->Duration1;
+		$hours = floor($item->Duration1/(60*60));
+		$mins = date("i",$item->Duration1);
+		$secs = date("s",$item->Duration1);
+		$totalyeardurationhours = $hours." Hours";
+		$totalyeardurationmins = $mins." Minutes";
+
+	}
+	   
+	//most played sim and that sims time		   	   
+	$mostplayedsim = 'None Played';
+	$mostplayedsimtime = 0;
+  	$query = $con->query("SELECT sum(SimDuration) tm, sim from playerdata pd, `ex1i_node__field_ride_sim_id` si, `ex1i_node__field_beta_mode` b where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by sim order by tm DESC LIMIT 1", array(':uuid' => $uid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$mostplayedsim = lookupSimNumber($item->sim);
+		//$mostplayedsimtime = $item->tm;
+		$hours = floor($item->tm/(60*60));
+		$mins = date("i",$item->tm);
+		$secs = date("s",$item->tm);
+		$mostplayedsimtime = $hours." hours ".$mins." mins ".$secs." seconds";
+	}
+	
+	
+	//Total Challenges Completed For 2021
+ 	$completedchallenges=0;
+ 	
+ 	$query = $con->query(' select sid.field_ride_sim_id_value sim, v1.field_challenge_sql_value_1_value val1, v2.field_challenge_sql_value_2_target_id val2, v3.field_challenge_sql_value_3_value val3, v4.field_challenge_sql_value_4_target_id val4, v5.field_challenge_sql_value_5_target_id val5 '.
+		' FROM '.
+	 	' `ex1i_node__field_challenge_sql_value_1` v1, '.
+	 	' `ex1i_node__field_challenge_sql_value_2` v2, '.
+	 	' `ex1i_node__field_challenge_sql_value_3` v3, '.
+	 	' `ex1i_node__field_challenge_sql_value_4` v4, '.
+	 	' `ex1i_node__field_challenge_sql_value_5` v5, '.
+	 	' `ex1i_node__field_based_upon_simulator` s, '.
+	 	' `ex1i_node__field_ride_sim_id` sid, '.
+ 		' `ex1i_node__field_beta_mode` b '. 
+ 		' WHERE '.
+ 		' v1.entity_id = v2.entity_id '.
+ 		' AND v1.entity_id = v3.entity_id '.
+ 		' AND v1.entity_id = v4.entity_id '.
+ 		' AND v1.entity_id = v5.entity_id '.
+ 		' AND v1.entity_id = s.entity_id '.
+ 		' AND b.entity_id = s.field_based_upon_simulator_target_id '.
+ 		' AND b.entity_id = sid.entity_id '.
+ 		' AND b.field_beta_mode_value=0 ' 
+ 		); 	
+ 	$data = $query->fetchAll();
+ 	$allmedals=0;
+ 	foreach($data as $item) {
+		$v1=$item->val1;
+		$v2=$item->val2;
+		$v3=$item->val3;
+		$v4=$item->val4;
+		$v5=$item->val5;
+		$sim = $item->sim;
+		$parts=array($v1,$v2,$v3,$v4,"","",$v5);
+		$allmedals++;
+		
+		//temp fix
+		$uuid = $uid;
+		
+		if (checkChallengeCompletedForYear($con,$uuid,$sim,$parts))$completedchallenges++;
+ 	}
+	
+	
+	//count number of game plays for year  	   
+	$submitcounts1 = '0';
+  	$query = $con->query("SELECT COUNT(`score`) AS TotalSubmits FROM `playerdata` WHERE `username` = :uuid", array(':uuid' => $uid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$submitcounts1 = $item->TotalSubmits;
+	}	
+
+	
+	
+	//CSS 
+	$output.="<style>
+	
+.RidesimsWrapped {
+width: 100% !important;
+position: relative;
+}
+	
+MainBlockHeading {
+    background-color: #35AAB6;
+    padding-left: 2%;
+    margin: 0;
+        margin-bottom: 0px;
+    text-align: center;
+    width: 100%;
+    height: 50px;
+    font-size: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-family: Arial;
+    text-shadow: 0px 0px 5px black;
+    margin-bottom: 0px;
+}
+
+.DownloadPhoto {
+    text-align: center;
+    padding-top: 10px;
+    font-size: 16px;
+}
+
+.fa.fa-download {
+    font-size: 30px;
+}
+
+#wrapped2022 {
+    width: 100%;
+}
+
+
+.PlusWelcomeBanner {
+  display: block;
+}
+
+bannername {
+  position: absolute;
+  color: white;
+  left: calc(50% - 100px);
+  width: 200px;
+  background: pink;
+  text-align: center;
+}
+
+.Top3Modules {
+display: flex;
+margin-top: 30px;
+}
+
+#ThankYouBanner {
+width: 100%;
+}
+
+.Top3ModulesThing {
+width: 33.3333333333%;
+}
+
+.Top3ModulesThing:nth-child(2){
+margin-left: 10px;
+margin-right: 10px;
+}
+
+.MedalsPlusPage {
+display: flex;
+flex-wrap: wrap;
+background: #BFE0F1;
+justify-content: center;
+}
+
+.MedalItem {
+width: 8.33333333333%;
+}	
+
+.MedalPhoto {
+width: 100%;
+}	
+
+.BannerGreen{
+background-color: #86E61F;
+}
+
+.BannerBlue{
+background-color: #35AAB6;
+}
+	
+.BannerPink{
+background-color: #E12C71;
+}
+
+.BannerYellow{
+background-color: #EBBA32;
+}
+
+.BannerOrange{
+background-color: #E47932;
+}
+	
+.DoubleDisplayPage {
+display: flex;
+}
+	
+.SmallBanner1 {
+width: 50%;
+margin-right: 1%;
+padding-bottom: 20px;
+background: #BFE0F1;
+position: relative;
+}
+
+.SmallBanner2 {
+width: 50%;
+margin-left: 1%;
+padding-bottom: 20px;
+background: #BFE0F1;
+position: relative;
+}
+
+RideSims24Banner{ 	
+		padding-left: 2%;
+		margin: 0;
+		text-align: center;
+		width: 100%;
+		height: 50px;
+		font-size: 20px;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		color: #fff;
+		font-family: Arial;
+		text-shadow: 0px 0px 5px black;
+		margin-bottom: 0px;
+}
+
+.playnowbutton2 {
+font-family: helvetica, sans-serif;
+text-transform: uppercase;
+color: white;
+height: auto;
+font-size: 18px;
+width: 200px;
+  text-align: center;
+  border-radius: 125px;
+  background: #CC0E55;
+  padding: 5px;
+  font-weight: bold;
+  position: initial;
+  border-color: #CC0E55;
+  border-style: solid;
+  display: inline-block;
+}
+	
+.PlayButtonDiv {
+text-align: center;
+padding-top: 10px;
+}	
+
+#SubmitSuggestion {
+width: 100%;
+}
+
+pluspagetitle {
+margin-left: 10px;
+margin-right: 10px;
+font-size: 18px;
+color: black;
+font-family: Arial;
+margin-bottom: 0px;
+display: block;
+}
+
+pluspagearticle {
+margin-left: 10px;
+margin-right: 10px;
+font-size: 15px;
+color: black;
+font-family: Arial;
+margin-bottom: 0px;
+display: block;
+}
+
+.BlogCard {
+background: #BFE0F1;
+}
+
+.PlusPageData {
+margin-left: 30px;
+margin-right: 30px;
+margin-top: 30px;
+margin-bottom: 30px;
+}
+
+.ChallengeTextDiv {
+text-align: center;
+position: absolute;
+top: 47%;
+width: 100%;
+-ms-transform: translateY(-50%);
+transform: translateY(-50%);
+}
+
+.ChallengeOfWeekText {
+width: 100%;
+text-align: center;
+color: #fff;
+font-family: helvetica, sans-serif;
+font-size: 20px;
+text-shadow: 0px 0px 10px black;
+align-items: center !important;
+}
+
+/* Mobile CSS Changes Code */
+@media only screen and (max-width: 850px) {
+
+.SmallBanner1 {
+  width: 100% !important;
+  margin-right: 0%;
+}
+
+.SmallBanner2 {
+  width: 100% !important;
+  margin-left: 0%;
+  margin-top: 30px;
+}
+
+.DoubleDisplayPage {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.Top3Modules {
+  flex-wrap: wrap;
+}
+
+.Top3ModulesThing {
+  width: 100%;
+}
+
+.Top3ModulesThing:nth-child(2) {
+  margin-left: 0px;
+  margin-right: 0px;
+}
+
+}
+
+
+	</style>";
+	
+    if ($uid != 0) {
+	
+	$output.= "<div class='RidesimsWrapped'>";
+		
+	//Username for transfer
+	$printusername = lookupUserNumber($uid);
+	
+	$imgpathtoshow = RideSimsWrappedSystem($totalyearpeople,$totalyeardurationhours,$totalyeardurationmins, $mostplayedsim, $completedchallenges, $submitcounts1, $printusername);
+
+	$output .= "<img id='wrapped2022' src='"."/RideSimsPlusWrapped/".$imgpathtoshow."'>";
+	
+	$imgpathdownload = "/RideSimsPlusWrapped/".$imgpathtoshow;
+		
+	$output .=  "</div>";  
+		
+	//End Of Div
+	$output .=  "</div>";    
+	}
+
+    $output.= "<div class='PlusPageData'>";
+    
+    //latest beta and released sim
+	$output.= "<div class='DoubleDisplayPage'>";
+
+	//current beta sim
+	$output.= "<div class='SmallBanner1'>";
+	$output.= "<RideSims24Banner class='BannerPink'>Latest Beta Sim</RideSims24Banner>";
+	for ($i=0; $i<count($BetaSimData); $i++){
+		$qg=$BetaSimData[$i];
+		$output .= "<img src='" .trim($qg['photo'])."' alt='".trim($qg['simname'])."'>";
+		$output.= "<div class='ChallengeTextDiv'><div class='ChallengeOfWeekText'>".trim($qg['simname'])."</div></div>";
+		$output .= '<div class="PlayButtonDiv"><a class="playnowbutton2" href="/ride-simulators/beta/'.trim($qg['url']).'">Play Beta</a></div>';
+	}
+	$output.= "</div>";
+
+	//current released sim
+	$output.= "<div class='SmallBanner2'>";
+	$output.= "<RideSims24Banner class='BannerGreen'>Latest Released</RideSims24Banner>";
+	for ($i=0; $i<count($LatestReleaseSimData); $i++){
+		$qg=$LatestReleaseSimData[$i];
+		$output .= "<img src='" .trim($qg['photo'])."' alt='".trim($qg['simname'])."'>";
+		$output.= "<div class='ChallengeTextDiv'><div class='ChallengeOfWeekText'>".trim($qg['simname'])."</div></div>";
+		$output .= '<div class="PlayButtonDiv"><a class="playnowbutton2" href="/ride-simulators/'.trim($qg['url']).'">Play Sim</a></div>';
+	}
+	$output.= "</div>";
+
+	
+	//end of double display setup
+	$output.= "</div>";
+    
+    
+    
+    //my highest scores - most plays sims - total peeps handled 
+	$uuid = $uid;
+	$output.="<div class='Top3Modules'>";
+
+  	//top 3 scores for user
+  	$output.="<div class='Top3ModulesThing'>";
+  	$output.= "<MainBlockHeading class='BannerGreen'>My Highest Scores</MainBlockHeading>";	  
+
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT max(pd.score) score, pd.sim, pd.username '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by pd.sim, username order by score DESC LIMIT 3', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$username = $item->username;
+		$score = $item->score;
+		$sim = $item->sim;
+		$scoreformated = number_format($score);
+		$OutputMePlease = "<tr><td>".$scoreformated."</td><td>".lookupSimNumber($sim)."</td></tr>";
+	}
+	$output.= "<table><tr></th></tr>".$OutputMePlease."</table>";
+	$output.= "</div>";
+
+  	$output.="<div class='Top3ModulesThing'>";
+	//total people handled - top 3 sims
+	$output.= "<MainBlockHeading class='BannerYellow'>My Most Played Sims</MainBlockHeading>";	  
+ 	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT sum(pd.SimDuration) playtime, pd.sim, pd.username '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by pd.sim, username order by playtime DESC LIMIT 3', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	$OutputMePlease="";
+	foreach($data as $item) {
+		$username = $item->username;
+		$sim = $item->sim;
+		$hours = floor($item->playtime/(60*60));
+		$mins = date("i",$item->playtime);
+		$secs = date("s",$item->playtime);
+		$time = $hours." hours ".$mins." mins ".$secs." seconds";
+		$OutputMePlease .= "<tr><td>".$time."</td><td>".lookupSimNumber($sim)."</td></tr>";
+	}
+	$output .= "<table><tr></th></tr>".$OutputMePlease."</table>";
+	$output.= "</div>";
+
+  	$output.="<div class='Top3ModulesThing'>";
+	//latest beta sim and latst released sim 
+    $output.= "<MainBlockHeading class='BannerOrange'>Total Peeps I've Handled</MainBlockHeading>";	  
+  	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT sum(pd.Challenge2) c1, pd.sim '.
+  					'from playerdata pd, '.
+  					' `ex1i_node__field_ride_sim_id` si,'.
+  					'`ex1i_node__field_beta_mode` b '. 
+  					' where pd.sim = si.field_ride_sim_id_value AND si.entity_id=b.entity_id AND b.field_beta_mode_value=0 AND pd.username = :uuid group by pd.sim order by c1 DESC LIMIT 3', array(':uuid' => $uuid));
+	$data = $query->fetchAll();
+	$OutputThis = "";
+	foreach($data as $item) {
+	
+		$score = $item->c1;
+		$scoreformated = number_format($score);
+	
+		$OutputThis .= "<tr><td>".$scoreformated."</td><td>".lookupSimNumber($item->sim)."</td></tr>";
+	}
+ 	$output.= "<table class='totalpeopleforuser'><tr></th></tr>".$OutputThis."</table>";
+	$output.= "</div>";
+	
+	//end of top 3 modules thing
+	$output.= "</div>";
+
+	//end of plusdata div 
+	$output.= "</div>";
+
+    //thank you banner 
+    $output.= "<img id='ThankYouBanner' src='https://ridesims.com/RideSimsBranding/ThankyouBanner.jpg'>";
+    
+    
+    
+    
+    
+    
+    
+    //split screen - latest vip post & suggest a sim
+    $output.= "<div class='PlusPageData'>";
+
+     //latest beta and released sim
+	$output.= "<div class='DoubleDisplayPage'>";
+
+	//current released sim
+	$output.= "<div class='SmallBanner1'>";
+	$output.= "<RideSims24Banner class='BannerOrange'>Latest Ride Sims VIP Update</RideSims24Banner>";
+	for ($i=0; $i<count($PlusBlogDataSingle); $i++){
+		$qg=$PlusBlogDataSingle[$i];		
+		
+		$output .= "<a href='/blog/".trim($qg['url'])."'>";
+		$output .= "<img src='" .trim($qg['photo'])."' alt='".trim($qg['title'])."'>";
+		$output .= "<PlusPageTitle>".trim($qg['title'])."</PlusPageTitle>";
+		$output .= "<PlusPageArticle>".trim($qg['article'])."</PlusPageArticle>";
+		$output .= "</a>";
+
+	}
+	$output.= "</div>";
+	
+	//current beta sim
+	$output.= "<div class='SmallBanner2'>";
+	$output.= "<RideSims24Banner class='BannerYellow'>Submit Sim Suggestions</RideSims24Banner>";
+	$output.= "<img id='SubmitSuggestion' src='https://ridesims.com/RideSimsBranding/SuggestionSimulationPicJ.jpg'>";
+	$output.= "<PlusPageArticle>You can submit 3 simulation suggestions a month. There is no gurantee that your suggestions will be made, however we do use this to gauge populatiry for future simulations.</PlusPageArticle>";
+	$output.= '<div class="PlayButtonDiv"><a class="playnowbutton2">Coming Soon</a></div>';
+	$output.= "</div>";
+	
+	//end of double display setup
+	$output.= "</div>";   
+    
+    $output.="</div>";
+    $output.= "</div>";
+	
+    $variables['output'] = $output;    	
+    		
+	}
+
+
+
+	//2024 plus page - news by three 	
+	if ($view->storage->id() == '2024_ride_sims_plus' && $view->current_display == 'block_3' && $field->field == 'field_news_title') {
+	
+		$parts = explode('|^',$variables['output']);
+		$output = "";
+	
+		$output.= "<style>
+		
+
+.PlusPageFlex .view-content-wrap {
+display: flex;
+margin-left: 30px;
+margin-right: 30px;
+margin-top: 30px;
+margin-bottom: 30px;
+}
+
+.BlogCard {
+  background: #BFE0F1;
+  width: 33.3333333333%;
+}
+
+.BlogCard:nth-child(2){
+margin-left: 10px;
+margin-right: 10px;
+}
+
+/* Mobile CSS Changes Code */
+@media only screen and (max-width: 850px) {
+
+.BlogCard {
+  width: 100% !important;
+}
+
+.PlusPageFlex .view-content-wrap {
+  flex-wrap: wrap;
+}
+
+.BlogCard:nth-child(2) {
+  margin-left: 0px;
+  margin-right: 0px;
+  margin-bottom: 30px;
+  margin-top: 30px;
+}
+
+.MedalItem {
+  width: 20%;
+}
+
+}
+
+
+		</style>";
+		
+		$output .= "<a href='/blog/".trim($parts[2])."'>";
+		$output .= "<img src='" .trim($parts[1])."' alt='".trim($parts[4])."'>";
+		$output .= "<PlusPageTitle>".trim($parts[4])."</PlusPageTitle>";
+		$output .= "<PlusPageArticle>".strip_tags(trim($parts[0]))."</PlusPageArticle>";
+		$output .= "</a>";
+		
+// 		{{ field_news_content }} |^
+// {{ field_news_image }} |^
+// {{ field_news_url_ }} |^
+// {{ field_publish_date }} |^
+// {{ field_news_title }}
+	
+    $variables['output'] = $output;    	
+	}	
+
+
+
+	//2024 plus page - medals	
+	if ($view->storage->id() == '2024_ride_sims_plus' && $view->current_display == 'block_4' && $field->field == 'field_ride_sim') {
+	
+	$output = "";	
+	
+	//find user information about user
+    $uid = \Drupal::currentUser()->id();
+    $user = \Drupal\user\Entity\User::load($uid);
+    
+	$output.= "<div class='PlusPageData'>";
+
+	//all challenge medals someones got 
+    $output.= "<MainBlockHeading class='BannerPink'>My Challenge Medals</MainBlockHeading>";	  
+ 	
+ 	$completedchallenges=0;
+ 	
+ 	$output.= "<div class='MedalsPlusPage'>";
+ 	
+ 	$con = \Drupal\Core\Database\Database::getConnection('default');
+ 	$query = $con->query(' select sid.field_ride_sim_id_value sim, v1.field_challenge_sql_value_1_value val1, v2.field_challenge_sql_value_2_target_id val2, v3.field_challenge_sql_value_3_value val3, v4.field_challenge_sql_value_4_target_id val4, v5.field_challenge_sql_value_5_target_id val5, v6.field_challenge_medal_target_id medal'.
+		' FROM '.
+	 	' `ex1i_node__field_challenge_sql_value_1` v1, '.
+	 	' `ex1i_node__field_challenge_sql_value_2` v2, '.
+	 	' `ex1i_node__field_challenge_sql_value_3` v3, '.
+	 	' `ex1i_node__field_challenge_sql_value_4` v4, '.
+	 	' `ex1i_node__field_challenge_sql_value_5` v5, '.
+	 	' `ex1i_node__field_challenge_medal` v6, '.
+	 	' `ex1i_node__field_based_upon_simulator` s, '.
+	 	' `ex1i_node__field_ride_sim_id` sid, '.
+ 		' `ex1i_node__field_beta_mode` b '. 
+ 		' WHERE '.
+ 		' v1.entity_id = v2.entity_id '.
+ 		' AND v1.entity_id = v3.entity_id '.
+ 		' AND v1.entity_id = v4.entity_id '.
+ 		' AND v1.entity_id = v5.entity_id '.
+ 		' AND v1.entity_id = v6.entity_id '.
+ 		' AND v1.entity_id = s.entity_id '.
+ 		' AND b.entity_id = s.field_based_upon_simulator_target_id '.
+ 		' AND b.entity_id = sid.entity_id '.
+ 		' AND b.field_beta_mode_value=0 ' 
+ 		); 	
+ 	$data = $query->fetchAll();
+ 	$allmedals=0;
+ 	foreach($data as $item) {
+		$v1=$item->val1;
+		$v2=$item->val2;
+		$v3=$item->val3;
+		$v4=$item->val4;
+		$v5=$item->val5;
+		$medal=$item->medal;
+		$sim = $item->sim;
+		$parts=array($v1,$v2,$v3,$v4,"","",$v5);
+		$allmedals++;
+		
+		//temp fix
+		$uuid = $uid;
+		
+		$MedalsEarnt=getMedalPhotoFromID(checkChallengeCompletedRideSimsPlus($con,$uuid,$sim,$parts,$medal));
+		
+		if (!$MedalsEarnt){
+		}else{
+			$output.="<div class='MedalItem'><img class='MedalPhoto' src='"."https://ridesims.com/".$MedalsEarnt."'></div>";
+		}
+ 	}
+
+	$output.="</div>";
+	
+    $variables['output'] = $output;    	
+	}	
+
+
+
+
+
+
+
+
+
+
+
+
+
+//End of global funcation	
+}
+
+
+
+//AKV
+function akv($array, $key, $notempty=false, $default=''){ 
+	    if (is_array($array) && array_key_exists($key, $array) && ($notempty || (($array[$key] !== '') && ($array[$key] !== null)))) return $array[$key];
+
+        return $default;
+    }
+    
+function RideSimsWrappedSystem($txt1,$txt2hours,$txt2mins, $txt3sim, $txt4, $txt5, $uid){
+  
+// (A) OPEN IMAGE
+$img = imagecreatefromjpeg("WrappedRideSimsPlusPage.jpg");
+
+// (B) TEXT & FONT SETTINGS
+$txt1 = $txt1;
+$txt2hours = $txt2hours;
+$txt2mins = $txt2mins;
+
+$sim = trim($txt3sim);
+$message = explode(' ', $sim);
+
+if (strlen($sim) > 15) {
+   
+$txt3part1 = $message[0]." ". $message[1]; 
+$txt3part2 = $message[2];
+
+}else{
+$txt3part1 = $sim;
+$txt3part2 = "";
+}
+
+$txt4 = $txt4;
+
+$txt5 = $txt5;
+
+$uid = $uid;
+$txt6 = "Operator: ".$uid;
+
+
+$fontFile = "/homepages/34/d764919300/htdocs/www_ridesims_com_v3_composer/web/arial.ttf"; // CHANGE TO YOUR OWN!
+$fontSize = 20;
+$fontSize2 = 20;
+$fontColor = imagecolorallocate($img, 255, 255, 255);
+$angle = 0;
+
+// (C) CALCULATE TEXT BOX POSITION
+// (C1) GET IMAGE DIMENSIONS
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt6);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 2);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "47";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+// imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt6);
+
+
+//Most Played Sim
+
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize2, $angle, $fontFile, $txt3part1);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 2);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "170";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize2, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt3part1);
+
+//do two lines of text
+if ($txt3part2!=""){
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize2, $angle, $fontFile, $txt3part2);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 2);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "170";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize2, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt3part2);
+
+
+}
+
+
+
+
+
+
+//Scores Submited
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt5);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 1.11);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "170";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt5);
+
+
+
+
+
+
+
+
+
+//Challenges Unlocked
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt4);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 1.435);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "170";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt4);
+
+
+
+
+//People Handled
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt1);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 11);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "170";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt1);
+
+
+
+
+
+//Total Time - Hours
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt2hours);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 3.5);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "170";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt2hours);
+
+
+//Total Time - Mins
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt2mins);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 3.70);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "200";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+// imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt2mins);
+
+
+
+
+
+// (C2) OR SAVE TO A FILE
+$quality = 100; // 0 to 100
+
+$imgdirectory = "RideSimsPlusWrapped/";
+
+imagejpeg($img, "".$imgdirectory.$uid."RideSimsPlusWrapped".".jpg", $quality);
+
+// <img src="Wrapped2021/" $uid "Wrapped2021.jpg">
+
+$returnthis = $uid."RideSimsPlusWrapped.jpg";
+  
+return ($returnthis);
+  
+
+}   
+
+function RideSimsWrappedSystemForAYear($txt1,$txt2hours,$txt2mins, $txt3sim, $txt4, $txt5, $uid){
+  
+// (A) OPEN IMAGE
+$img = imagecreatefrompng("RideSimsWrapped.png");
+
+// (B) TEXT & FONT SETTINGS
+$txt1 = $txt1;
+$txt2hours = $txt2hours;
+$txt2mins = $txt2mins;
+
+$sim = trim($txt3sim);
+$message = explode(' ', $sim);
+
+if (strlen($sim) > 15) {
+   
+$txt3part1 = $message[0]." ". $message[1]; 
+$txt3part2 = $message[2];
+
+}else{
+$txt3part1 = $sim;
+$txt3part2 = "";
+}
+
+$txt4 = $txt4;
+
+$txt5 = $txt5;
+
+$uid = $uid;
+$txt6 = "Operator: ".$uid;
+
+
+$fontFile = "/homepages/34/d764919300/htdocs/www_ridesims_com_v3_composer/arial.ttf"; // CHANGE TO YOUR OWN!
+$fontSize = 30;
+$fontSize2 = 25;
+$fontColor = imagecolorallocate($img, 255, 255, 255);
+$angle = 0;
+
+// (C) CALCULATE TEXT BOX POSITION
+// (C1) GET IMAGE DIMENSIONS
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt6);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 2);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "75";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt6);
+
+
+
+
+
+
+
+
+//Most Played Sim
+
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize2, $angle, $fontFile, $txt3part1);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 2);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "300";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize2, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt3part1);
+
+//do two lines of text
+if ($txt3part2!=""){
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize2, $angle, $fontFile, $txt3part2);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 2);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "340";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize2, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt3part2);
+
+
+}
+
+
+
+
+
+
+//Scores Submited
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt5);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 1.14);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "300";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt5);
+
+
+
+
+
+
+
+
+
+//Challenges Unlocked
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt4);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 1.453);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "300";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt4);
+
+
+
+
+//People Handled
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt1);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 9);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "300";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt1);
+
+
+
+
+
+//Total Time - Hours
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt2hours);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 3.3);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "300";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt2hours);
+
+
+//Total Time - Mins
+$iWidth = imagesx($img);
+$iHeight = imagesy($img);
+
+// (C2) GET TEXT BOX DIMENSIONS
+$tSize = imagettfbbox($fontSize, $angle, $fontFile, $txt2mins);
+$tWidth = max([$tSize[2], $tSize[4]]) - min([$tSize[0], $tSize[6]]);
+$tHeight = max([$tSize[5], $tSize[7]]) - min([$tSize[1], $tSize[3]]);
+
+// (C3) CENTER THE TEXT BLOCK
+$centerX = CEIL(($iWidth - $tWidth) / 3.4);
+$centerX = $centerX<0 ? 0 : $centerX;
+$centerY = "340";
+$centerY = $centerY<0 ? 0 : $centerY;
+
+// (D) DRAW TEXT ON IMAGE
+imagettftext($img, $fontSize, $angle, $centerX, $centerY, $fontColor, $fontFile, $txt2mins);
+
+
+
+
+
+// (C2) OR SAVE TO A FILE
+$quality = 100; // 0 to 100
+
+$imgdirectory = "RideSimsPlusWrapped/";
+
+imagejpeg($img, "".$imgdirectory.$uid."RideSimsPlusWrapped".".jpg", $quality);
+
+// <img src="Wrapped2021/" $uid "Wrapped2021.jpg">
+
+$returnthis = $uid."RideSimsPlusWrapped.jpg";
+  
+return ($returnthis);
+  
+
+}   
+       
+function getMedalPhotoFromID($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$query = $con->query('SELECT `uri` FROM `ex1i_file_managed` where `fid` =:plid', array(':plid'=>$number));
+	$file='';
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$file = str_replace('public:/','/sites/default/files/', $item->uri);
+	}
+	
+	return ($file);
+}      
+      
+function checkChallengeCompletedAndSavePhoto($con,$uuid,$sim,$parts){
+
+	$params=array(':uuid' => $uuid);
+	$extrasql = "";
+	if (!is_array($parts)) $parts=array();
+	$parts= array_pad($parts,8,'');
+  	  	  	
+	$parts[3] = str_replace("\n", "", $parts[3]);
+	$parts[3] = str_replace("\r", "", $parts[3]);
+	if ((trim($parts[3])=="sim")||(trim($parts[3])==6)){
+		if (trim($parts[2])!=""){
+			$extrasql .= " and `sim` = :sim " ;
+			$params[':sim']= trim($parts[2]);		
+		}
+	}
+
+	$parts[6] = str_replace("\n", "", $parts[6]);
+	$parts[6] = str_replace("\r", "", $parts[6]);
+	switch(trim($parts[6])){
+		case "total":
+		case "16":
+			$fldpre="group by `username` having sum(";
+			$fldpost=") ";
+		break;
+		default:
+			$fldpre=' and ';
+			$fldpost='';
+		break;
+	}
+	//$output.=print_r($parts,true);
+	switch(trim($parts[1])){
+		case "score":
+		case "5":
+			$extrasql .= " ".$fldpre."`score`".$fldpost." >= :score " ;
+			$params[':score']= trim($parts[0]);
+		break;
+		case "Challenge1":
+		case "10":
+			$extrasql .= " ".$fldpre."`Challenge1`".$fldpost." >= :chal1 " ;
+			$params[':chal1']= trim($parts[0]);
+		break;
+		case "Challenge2":
+		case "11":
+			$extrasql .= "  ".$fldpre."`Challenge2`".$fldpost." >= :chal2 " ;
+			$params[':chal2']= trim($parts[0]);
+		break;
+		case "Challenge3":
+		case "12":
+			$extrasql .= "  ".$fldpre."`Challenge3`".$fldpost." >= :chal3 " ;
+			$params[':chal3']= trim($parts[0]);
+		break;
+		case "Challenge4":
+		case "13":
+			$extrasql .= "  ".$fldpre."`Challenge4`".$fldpost." >= :chal4 " ;
+			$params[':chal4']= trim($parts[0]);
+		break;
+		case "Challenge5":
+		case "14":
+			$extrasql .= "  ".$fldpre."`Challenge5`".$fldpost." >= :chal5 " ;
+			$params[':chal5']= trim($parts[0]);
+		break;
+	
+	}
+
+//debugging can be done by uncommenting this
+//$debug=''.$extrasql." ".print_r($parts,true);
+	
+	$imagetosendback = "";
+  	$query = $con->query('SELECT `username` FROM `playerdata` where `username`= :uuid '.$extrasql."", $params);
+	$data = $query->fetchAll();
+	$found=false;
+	foreach($data as $item) {
+		$found=true;
+		$imagetosendback = $parts[7];
+	}
+
+	if($found === true){
+	return($imagetosendback);
+	}else{
+	return ("nothing");
+	}
+
+}
+    
+function setUserSettings($con, $uid, $setting, $value){
+	$query = $con->query(' INSERT INTO playersettings (player_id, setting, value, timestamp) VALUES (:plid, :setting, :value, now()) on duplicate key update value=:value, timestamp=now()',array(':plid'=>$uid, ':setting'=>$setting, ':value'=>$value));
+}
+
+function challengeSystemFindStatus($uid){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+
+	$query = $con->query('SELECT `Message` FROM `ChallengeStatusLog` WHERE `UserID` =:plid AND `DateAndTime` > now() - interval 1 minute LIMIT 1', array(':plid'=>$uid));
+	$data = $query->fetchAll();
+
+	$message = "";
+	foreach($data as $item) {
+		$message = $item->Message;
+	}
+	return($message);
+
+}
+
+function getUserSettings($con, $uid){
+	$query = $con->query('SELECT * FROM playersettings where player_id=:plid', array(':plid'=>$uid));
+	$data = $query->fetchAll();
+	$ret=array();
+	foreach($data as $item) {
+		$ret[$item->setting] = $item->value;
+	}
+	return($ret);
+}
+
+function checkChallengeCompleted($con,$uuid,$sim,$parts){
+	$params=array(':uuid' => $uuid);
+	$extrasql = "";
+	if (!is_array($parts)) $parts=array();
+	$parts= array_pad($parts,7,'');
+  	
+	$parts[3] = str_replace("\n", "", $parts[3]);
+	$parts[3] = str_replace("\r", "", $parts[3]);
+	if ((trim($parts[3])=="sim")||(trim($parts[3])==6)){
+		if (trim($parts[2])!=""){
+			$extrasql .= " and `sim` = :sim " ;
+			$params[':sim']= trim($parts[2]);		
+		}
+	}
+
+	$parts[6] = str_replace("\n", "", $parts[6]);
+	$parts[6] = str_replace("\r", "", $parts[6]);
+	switch(trim($parts[6])){
+		case "total":
+		case "16":
+			$fldpre="group by `username` having sum(";
+			$fldpost=") ";
+		break;
+		default:
+			$fldpre=' and ';
+			$fldpost='';
+		break;
+	}
+	//$output.=print_r($parts,true);
+	switch(trim($parts[1])){
+		case "score":
+		case "5":
+			$extrasql .= " ".$fldpre."`score`".$fldpost." >= :score " ;
+			$params[':score']= trim($parts[0]);
+		break;
+		case "Challenge1":
+		case "10":
+			$extrasql .= " ".$fldpre."`Challenge1`".$fldpost." >= :chal1 " ;
+			$params[':chal1']= trim($parts[0]);
+		break;
+		case "Challenge2":
+		case "11":
+			$extrasql .= "  ".$fldpre."`Challenge2`".$fldpost." >= :chal2 " ;
+			$params[':chal2']= trim($parts[0]);
+		break;
+		case "Challenge3":
+		case "12":
+			$extrasql .= "  ".$fldpre."`Challenge3`".$fldpost." >= :chal3 " ;
+			$params[':chal3']= trim($parts[0]);
+		break;
+		case "Challenge4":
+		case "13":
+			$extrasql .= "  ".$fldpre."`Challenge4`".$fldpost." >= :chal4 " ;
+			$params[':chal4']= trim($parts[0]);
+		break;
+		case "Challenge5":
+		case "14":
+			$extrasql .= "  ".$fldpre."`Challenge5`".$fldpost." >= :chal5 " ;
+			$params[':chal5']= trim($parts[0]);
+		break;
+	
+	}
+
+//debugging can be done by uncommenting this
+//$debug=''.$extrasql." ".print_r($parts,true);
+
+//file_put_contents("/kunden/homepages/34/d764919300/htdocs/www_ridesims_com_v3_composer/jameswible123456789.log",date("r").$debug."\r\n", FILE_APPEND);
+
+	
+  	$query = $con->query('SELECT `username` FROM `playerdata` where `username`= :uuid '.$extrasql."", $params);
+	$data = $query->fetchAll();
+
+	$found=false;
+	foreach($data as $item) {
+		$found=true;
+	}
+	return ($found);
+}
+
+function checkChallengeCompletedForYear($con,$uuid,$sim,$parts){
+	$params=array(':uuid' => $uuid);
+	$extrasql = "";
+	if (!is_array($parts)) $parts=array();
+	$parts= array_pad($parts,7,'');
+  	
+	$parts[3] = str_replace("\n", "", $parts[3]);
+	$parts[3] = str_replace("\r", "", $parts[3]);
+	if ((trim($parts[3])=="sim")||(trim($parts[3])==6)){
+		if (trim($parts[2])!=""){
+			$extrasql .= " and `sim` = :sim " ;
+			$params[':sim']= trim($parts[2]);		
+		}
+	}
+
+	$parts[6] = str_replace("\n", "", $parts[6]);
+	$parts[6] = str_replace("\r", "", $parts[6]);
+	switch(trim($parts[6])){
+		case "total":
+		case "16":
+			$fldpre="group by `username` having sum(";
+			$fldpost=") ";
+		break;
+		default:
+			$fldpre=' and ';
+			$fldpost='';
+		break;
+	}
+	//$output.=print_r($parts,true);
+	switch(trim($parts[1])){
+		case "score":
+		case "5":
+			$extrasql .= " ".$fldpre."`score`".$fldpost." >= :score " ;
+			$params[':score']= trim($parts[0]);
+		break;
+		case "Challenge1":
+		case "10":
+			$extrasql .= " ".$fldpre."`Challenge1`".$fldpost." >= :chal1 " ;
+			$params[':chal1']= trim($parts[0]);
+		break;
+		case "Challenge2":
+		case "11":
+			$extrasql .= "  ".$fldpre."`Challenge2`".$fldpost." >= :chal2 " ;
+			$params[':chal2']= trim($parts[0]);
+		break;
+		case "Challenge3":
+		case "12":
+			$extrasql .= "  ".$fldpre."`Challenge3`".$fldpost." >= :chal3 " ;
+			$params[':chal3']= trim($parts[0]);
+		break;
+		case "Challenge4":
+		case "13":
+			$extrasql .= "  ".$fldpre."`Challenge4`".$fldpost." >= :chal4 " ;
+			$params[':chal4']= trim($parts[0]);
+		break;
+		case "Challenge5":
+		case "14":
+			$extrasql .= "  ".$fldpre."`Challenge5`".$fldpost." >= :chal5 " ;
+			$params[':chal5']= trim($parts[0]);
+		break;
+	
+	}
+
+//debugging can be done by uncommenting this
+//$output.=''.$extrasql." ".print_r($parts,true);
+
+	
+  	$query = $con->query("SELECT `username` FROM `playerdata` where `username`= :uuid".$extrasql."", $params);
+	$data = $query->fetchAll();
+
+	$found=false;
+	foreach($data as $item) {
+		$found=true;
+	}
+	return ($found);
+}
+
+function checkChallengeCompletedRideSimsPlus($con,$uuid,$sim,$parts,$medal){
+	$output = "";
+	$params=array(':uuid' => $uuid);
+	$extrasql = "";
+	if (!is_array($parts)) $parts=array();
+	$parts= array_pad($parts,7,'');
+  	
+	$parts[3] = str_replace("\n", "", $parts[3]);
+	$parts[3] = str_replace("\r", "", $parts[3]);
+	if ((trim($parts[3])=="sim")||(trim($parts[3])==6)){
+		if (trim($parts[2])!=""){
+			$extrasql .= " and `sim` = :sim " ;
+			$params[':sim']= trim($parts[2]);		
+		}
+	}
+
+	$parts[6] = str_replace("\n", "", $parts[6]);
+	$parts[6] = str_replace("\r", "", $parts[6]);
+	switch(trim($parts[6])){
+		case "total":
+		case "16":
+			$fldpre="group by `username` having sum(";
+			$fldpost=") ";
+		break;
+		default:
+			$fldpre=' and ';
+			$fldpost='';
+		break;
+	}
+	//$output.=print_r($parts,true);
+	switch(trim($parts[1])){
+		case "score":
+		case "5":
+			$extrasql .= " ".$fldpre."`score`".$fldpost." >= :score " ;
+			$params[':score']= trim($parts[0]);
+		break;
+		case "Challenge1":
+		case "10":
+			$extrasql .= " ".$fldpre."`Challenge1`".$fldpost." >= :chal1 " ;
+			$params[':chal1']= trim($parts[0]);
+		break;
+		case "Challenge2":
+		case "11":
+			$extrasql .= "  ".$fldpre."`Challenge2`".$fldpost." >= :chal2 " ;
+			$params[':chal2']= trim($parts[0]);
+		break;
+		case "Challenge3":
+		case "12":
+			$extrasql .= "  ".$fldpre."`Challenge3`".$fldpost." >= :chal3 " ;
+			$params[':chal3']= trim($parts[0]);
+		break;
+		case "Challenge4":
+		case "13":
+			$extrasql .= "  ".$fldpre."`Challenge4`".$fldpost." >= :chal4 " ;
+			$params[':chal4']= trim($parts[0]);
+		break;
+		case "Challenge5":
+		case "14":
+			$extrasql .= "  ".$fldpre."`Challenge5`".$fldpost." >= :chal5 " ;
+			$params[':chal5']= trim($parts[0]);
+		break;
+	
+	}
+
+	//debugging can be done by uncommenting this
+	//$output.=''.$extrasql." ".print_r($parts,true);
+	//$RunThis = "SELECT `username` FROM `playerdata` where `username`= :uuid".$extrasql."". print_r($params,true)."<br><br>";
+	
+  	$query = $con->query("SELECT `username` FROM `playerdata` where `username`= :uuid".$extrasql."", $params);
+	$data = $query->fetchAll();
+
+	$found=false;
+	$MedalTrue="";
+	foreach($data as $item) {
+		$found=true;
+		$MedalTrue=$medal;	
+	}
+	
+	return ($MedalTrue);
+
+}
+
+//Check if photo can be loaded 
+function checkPhotoURL($image){
+
+	$imtmp = $image;	
+
+	$image_url = 'https://ridesims.com/'.$imtmp;
+	$image_type_check = @exif_imagetype($image_url);//Get image type + check if exists
+	if (strpos($http_response_header[0], "403") || strpos($http_response_header[0], "404") || strpos($http_response_header[0], "302") || strpos($http_response_header[0], "301")) {
+    	//echo "403/404/302/301<br>";
+    	$imagec = "/RideSimsBranding/RideSimsPlusBanner2_BLANK.jpg";
+    	
+    	//Log the bad image address?
+
+	} else {
+    	//echo "image exists<br>";
+    	$imagec = $image;
+	}
+	
+	return ($imagec);
+
+}
+
+
+function lookupUserNumber($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT `name` FROM `ex1i_users_field_data` where `uid`= :uuid limit 1', array("uuid"=>$number));
+
+	$data = $query->fetchAll();
+	$name='Unknown Player';
+	foreach($data as $item) {
+		$name=$item->name;
+	}
+	return ($name);
+}
+
+function getUserImageForNumber($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+ 	$query = $con->query('SELECT f.`uri` uri FROM '.
+  						' `ex1i_user__user_picture` p, '.
+  						' `ex1i_file_managed` f ' .
+  						' where p.user_picture_target_id = f.fid '.
+  						' AND p.`entity_id`= :uuid limit 1', array("uuid"=>$number));
+	$file='';
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$file = str_replace('public:/','/sites/default/files/', $item->uri);
+	}
+	
+	return ($file);
+}
+
+function getUserImageForNumberForVIP($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+ 	$query = $con->query('SELECT f.`uri` uri FROM '.
+  						' `ex1i_user__user_picture` p, '.
+  						' `ex1i_file_managed` f ' .
+  						' where p.user_picture_target_id = f.fid '.
+  						' AND p.`entity_id`= :uuid limit 1', array("uuid"=>$number));
+	$file='';
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$file = str_replace('public:/','/sites/default/files/styles/pluspagemerge/public/', $item->uri);
+	}
+	
+	return ($file);
+}
+
+function getUserImageForNumberNew($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+ 	$query = $con->query('SELECT f.`uri` uri FROM '.
+  						' `ex1i_user__user_picture` p, '.
+  						' `ex1i_file_managed` f ' .
+  						' where p.user_picture_target_id = f.fid '.
+  						' AND p.`entity_id`= :uuid limit 1', array("uuid"=>$number));
+	$file='/RideSimsBranding/UserIcon1.jpg';
+	$data = $query->fetchAll();
+	foreach($data as $item) {
+		$file = str_replace('public:/','/sites/default/files/', $item->uri);
+	}
+	
+	return ($file);
+}
+
+function getSimPromoImageFromTitle($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+ 	$query = $con->query('SELECT efm.`uri` img, enfun.field_url_name_value link'.
+  						' FROM `ex1i_node__field_ride_sim` frs, '.
+  						' `ex1i_node__field_ride_sim_promo_large` frsp,'.
+  						' `ex1i_file_managed` efm, '.
+  						' `ex1i_node__field_url_name` enfun '.
+  						'  where frs.entity_id = frsp.entity_id '.
+  						'  and frs.entity_id = enfun.entity_id '.
+  						'  and frsp.field_ride_sim_promo_large_target_id = efm.fid'.
+  						'  and frs.field_ride_sim_value = :data limit 1', array("data"=>$number));
+	$file='';
+	$data = $query->fetchAll();
+
+	foreach($data as $item) {
+		//file_put_contents("/kunden/homepages/34/d764919300/htdocs/www_ridesims_com_v3_composer/jameswible123456789.log",date("r").$item->img."\r\n", FILE_APPEND);
+
+		$file = str_replace('public:/','/sites/default/files/', $item->img);
+	}
+	
+			//file_put_contents("/kunden/homepages/34/d764919300/htdocs/www_ridesims_com_v3_composer/jameswible123456789.log",date("r").$file."\r\n", FILE_APPEND);
+	
+	return ($file);
+}
+
+function lookupSimNumber($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	$query = $con->query('SELECT a.`field_ride_sim_value` FROM `ex1i_node__field_ride_sim` a, `ex1i_node__field_ride_sim_id` b where a.entity_id = b.entity_id AND b.`field_ride_sim_id_value`= :uuid limit 1', array("uuid"=>$number));
+	$data = $query->fetchAll();
+	$name='';
+	foreach($data as $item) {
+		$name=$item->field_ride_sim_value;
+	}
+	return ($name);
+}
+
+function lookupSimNumberFromNid($number){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+  	//$query = $con->query('SELECT a.`field_ride_sim_value` FROM `ex1i_node__field_ride_sim` a, `ex1i_node__field_ride_sim_id` b where a.entity_id = b.entity_id AND b.`field_ride_sim_id_value`= :uuid limit 1', array("uuid"=>$number));
+	$query = $con->query('SELECT `field_ride_sim_value` FROM `ex1i_node__field_ride_sim` where `entity_id`= :uuid limit 1', array("uuid"=>$number));
+	$data = $query->fetchAll();
+	$name='';
+	foreach($data as $item) {
+		$name=$item->field_ride_sim_value;
+	}
+	return ($name);
+}
+
+function isUserFollowingUser($user1,$user2){
+ 	$con = \Drupal\Core\Database\Database::getConnection('default');
+	$query = $con->query('SELECT 1 from playerfriends where playerid=:plid AND friendid=:frid', array('plid'=>$user1, 'frid'=>$user2));
+	$data = $query->fetchAll();
+	$found=false;
+	foreach($data as $item) {
+	 $found=true;
+	}
+	return $found;
+}
+
+// sort associative arrays
+function sortArrayOfAsociativeArraysOnKey($array,$sortkey){
+        $ind = array();
+        foreach ($array as $key => $row){
+            $ind[$key] = akv($row,$sortkey);
+        }
+        array_multisort($ind, SORT_ASC, $array);
+
+        return($array);
+}
+
+//check users roles
+function checkUsersRoles($userid){
+	$con = \Drupal\Core\Database\Database::getConnection('default');
+ 
+ 	$query = $con->query("SELECT `roles_target_id` FROM `ex1i_user__roles` where `entity_id` = :uuid", array("uuid"=>$userid));
+
+	$data = $query->fetchAll();
+	$name='';
+	foreach($data as $item) {
+		$name.=$item->roles_target_id;
+		$name.=" $$ ";
+	}
+	return ($name);
+}
+
+//Set View Titles
+function utility_views_pre_render(ViewExecutable $view) {
+
+	//Ride Sims Public Display
+	if ($view->id() == 'ride_sim_player_view' && $view->current_display == 'page_1') {
+
+   		$path = \Drupal::request()->getpathInfo();
+   		$arg  = explode('/',$path);
+
+		if ($arg['1'] == 'ride-simulators') {
+   			$title = $arg['2'];
+   			if ($title) {
+   				$title = preg_replace("/[-]/", " ", $title);
+	  			$specialtoken = $title.' ';
+			    $view->setTitle($specialtoken);
+			    // Set the view title.
+   			}
+		}
+    }
+    
+	//Ride Sims Beta Display
+	if ($view->id() == 'ride_sim_player_view' && $view->current_display == 'page_2') {
+
+   		$path = \Drupal::request()->getpathInfo();
+   		$arg  = explode('/',$path);
+
+		if ($arg['1'] == 'ride-simulators' && $arg['2'] == 'beta' ) {
+   			$title = $arg['3'];
+   			if ($title) {
+   				$title = preg_replace("/[-]/", " ", $title);
+	  			$specialtoken = $title.' ';
+			    $view->setTitle($specialtoken);
+			    // Set the view title.
+   			}
+		}
+    }
+ 
+ 	//Home Page News Display
+	if ($view->id() == 'home_page_news_display' && $view->current_display == 'page_1') {
+
+   		$path = \Drupal::request()->getpathInfo();
+   		$arg  = explode('/',$path);
+
+		if ($arg['1'] == 'news' ) {
+   			$title = $arg['2'];
+   			if ($title) {
+   				$title = preg_replace("/[-]/", " ", $title);
+	  			$specialtoken = $title.' ';
+			    $view->setTitle($specialtoken);
+			    // Set the view title.
+   			}
+		}
+    }
+ 
+  	//Ride Sims Plus Blog Display
+	if ($view->id() == 'news_article_display' && $view->current_display == 'page_1') {
+
+   		$path = \Drupal::request()->getpathInfo();
+   		$arg  = explode('/',$path);
+
+		if ($arg['1'] == 'blog' ) {
+   			$title = $arg['2'];
+   			if ($title) {
+   				$title = preg_replace("/[-]/", " ", $title);
+	  			$specialtoken = $title.' ';
+			    $view->setTitle($specialtoken);
+			    // Set the view title.
+   			}
+		}
+    }
+    
+      	//Ride Sims Plus Blog Display
+	if ($view->id() == '2024_ride_sims_plus' && $view->current_display == 'page_1') {
+
+   		$path = \Drupal::request()->getpathInfo();
+   		$arg  = explode('/',$path);
+
+		if ($arg['1'] == 'ride-sims-plus' ) {
+			    $view->setTitle("Ride Sims Plus Blog");
+		}
+    }
+    
+    
+    //Ride Sims Plus Blog Display
+	if ($view->id() == 'ride_sims_view_2024' && $view->current_display == 'page_1') {
+
+   		$path = \Drupal::request()->getpathInfo();
+   		$arg  = explode('/',$path);
+
+		if ($arg['1'] == 'simulators' ) {
+			    $view->setTitle("Ride Sims Simulators");
+		}
+    }
+     
+}
